@@ -80,7 +80,9 @@ const CAM_L = {
   near: pose(-0.3, 0.45, 8.8, -0.45, 0.3, 0, 41),
   pay: pose(-1.4, 1.0, 7.7, -1.6, 0.05, 0, 40),
   pay2: pose(-1.3, 1.0, 7.35, -1.52, 0.07, 0, 40),
-  out: pose(0, 0.5, 2.6, 0, 0.5, 0, 38),
+  // a gentler push: closer than ~4.5 m the white mark fills the frame and
+  // blooms into one bright sheet just before the cut (a flash on a fast scroll)
+  out: pose(0, 0.5, 4.7, 0, 0.5, 0, 38),
 }
 /** 4:3-ish landscape (tablets, small laptops): the payoff pulls back so "Neon" clears the CTAs */
 const CAM_L43 = {
@@ -93,7 +95,7 @@ const CAM_P = {
   near: pose(0, 0.2, 11.2, 0, 0.9, 0, 51),
   pay: pose(0, 0.3, 10.2, 0, -0.35, 0, 50),
   pay2: pose(0, 0.32, 9.8, 0, -0.3, 0, 50),
-  out: pose(0, 0.65, 3.4, 0, 0.65, 0, 44),
+  out: pose(0, 0.65, 6.2, 0, 0.65, 0, 44),
 }
 
 interface Tube {
@@ -487,6 +489,8 @@ export default function create(): Chapter {
       // a tighter glow so the mark's double outlines stay two tubes, not one white slab
       const P = ctx.post.params
       P.bloomRadius = 0.2
+      // the out-push: less glow as the mark grows in frame
+      P.bloomStrength = lerp(0.8, 0.5, segment(local, 0.92, 1))
 
       // copy
       reveal(intro, 1 - smoothstep(0.075, 0.13, local))
