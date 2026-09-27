@@ -32,17 +32,28 @@ const COPY: Record<string, () => string> = {
     <p>${esc(BRAND.manifesto)}</p>
     <p><a href="#work" data-land="work" data-anchor="0">See the work</a> · <a href="#contact" data-land="contact" data-anchor="0">Start a project</a></p>`,
 
-  work: () => `
+  work: () => {
+    // featured first, then the rest — the same order as the stage (anchors 0..14)
+    const featured = WORK.filter(w => w.featured)
+    const rest = WORK.filter(w => !w.featured)
+    const item = (w: (typeof WORK)[number], i: number, n: number) =>
+      `<li><h3>${esc(w.name)}</h3><p>${String(i + 1).padStart(2, '0')} / ${String(n).padStart(2, '0')} · ${esc(w.industry)}. ${esc(w.blurb)}</p><p>${w.tags.map(esc).join(' · ')}</p><p>${ext(
+        w.url,
+        isPreview(w.url) ? `Preview ${w.name} (pre-launch build)` : `Visit ${w.name}`,
+        i,
+      )}</p></li>`
+    return `
     <h2 tabindex="0">${esc(SECTIONS.work.title)}</h2>
     <p>${esc(SECTIONS.work.eyebrow)} — ${WORK.length} sites.</p>
-    <ul>${WORK.map(
-      (w, i) =>
-        `<li><h3>${esc(w.name)}</h3><p>${esc(w.industry)}. ${esc(w.blurb)}</p><p>${ext(
-          w.url,
-          isPreview(w.url) ? `Preview ${w.name} (pre-launch build)` : `Visit ${w.name}`,
-          i,
-        )}</p></li>`,
-    ).join('')}</ul>`,
+    <ul>${featured.map((w, i) => item(w, i, featured.length)).join('')}</ul>
+    <h3>Nine more, all live.</h3>
+    <ul>${rest
+      .map(
+        (w, j) =>
+          `<li>${esc(w.name)} · ${esc(w.industry)} · ${ext(w.url, isPreview(w.url) ? `Preview ${w.name} (pre-launch build)` : `Visit ${w.name}`, featured.length + j)}</li>`,
+      )
+      .join('')}</ul>`
+  },
 
   services: () => `
     <h2 tabindex="0">${esc(SECTIONS.services.title)}</h2>

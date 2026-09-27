@@ -386,7 +386,7 @@ export const PROCESS = [
  */
 /** THEME: give every concept its own microcopy (don't reuse another concept's). */
 export const MICROCOPY = {
-  signalEyebrow: 'Hark Digital Design · open late',
+  signalEyebrow: 'Hark Digital Design · Philadelphia',
   scrollHint: 'Scroll to strike the tubes',
   audio: 'Hum',
   audioOn: 'On',

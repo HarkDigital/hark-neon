@@ -17,7 +17,10 @@ import { neonFromStrokes, TUBE, type NeonPart, type TubeColor } from './neon'
  *
  * Lights: never add/remove or hide lights at runtime (three recompiles every
  * lit material). Keep each chapter's light count fixed; drive intensity.
- * RectAreaLights are cheap-ish but not free: ≤ 6 per chapter.
+ * RectAreaLights are NOT cheap: the review measured 40–56% of the GPU frame
+ * at DPR 2 with 5–6 of them. Budget ≤ 3 per chapter (≤ 2 on phones via
+ * ctx.mobile), never two lights for one tube, and fake floor pools / spark
+ * glows with additive planes (neonSpill, a soft sprite) instead.
  */
 
 let areaInit = false
@@ -35,8 +38,11 @@ function rnd(seed: number) {
 const texCache = new Map<string, THREE.Texture>()
 
 /** A brick tile (running bond), albedo + height, as two small canvases. */
-function brickTiles(tint: string) {
-  const key = `brick:${tint}`
+/** brick tile brightness: bricks are painted around this grey, the material colour tints them */
+const BRICK_GREY = 0.62
+
+function brickTiles() {
+  const key = 'brick'
   if (texCache.has(key)) return { map: texCache.get(key)!, bump: texCache.get(key + ':b')! }
   const S = 512
   const rows = 8
@@ -50,7 +56,8 @@ function brickTiles(tint: string) {
   const ga = a.getContext('2d')!
   const gb = b.getContext('2d')!
   const r = rnd(11)
-  const base = new THREE.Color(tint)
+  // neutral: one tile for every tint (the material colour tints it)
+  const base = new THREE.Color().setScalar(BRICK_GREY)
   ga.fillStyle = '#0a090a'
   ga.fillRect(0, 0, S, S)
   gb.fillStyle = '#000'
@@ -60,8 +67,8 @@ function brickTiles(tint: string) {
     for (let x = -1; x <= cols; x++) {
       const px = x * bw + off + mortar / 2
       const py = y * bh + mortar / 2
-      const c = base.clone().multiplyScalar(0.75 + r() * 0.5)
-      ga.fillStyle = `#${c.getHexString()}`
+      const v = Math.min(1, BRICK_GREY * (0.75 + r() * 0.5))
+      ga.fillStyle = `rgb(${(v * 255) | 0},${(v * 255) | 0},${(v * 255) | 0})`
       ga.fillRect(px, py, bw - mortar, bh - mortar)
       gb.fillStyle = `rgb(${200 + r() * 40 | 0},${200 + r() * 40 | 0},${200 + r() * 40 | 0})`
       gb.fillRect(px, py, bw - mortar, bh - mortar)
@@ -106,13 +113,15 @@ export interface BrickOptions {
 /** Painted brick for walls. Clone per wall size (the textures are shared). */
 export function brickMaterial(o: BrickOptions = {}) {
   const { tint = '#2a2027', tile = 1.6, width = 10, height = 6 } = o
-  const { map, bump } = brickTiles(tint)
+  const { map, bump } = brickTiles()
   const m = map.clone()
   const bmp = bump.clone()
   m.repeat.set(width / tile, height / tile)
   bmp.repeat.copy(m.repeat)
   m.needsUpdate = bmp.needsUpdate = true
-  return new THREE.MeshStandardMaterial({ map: m, bumpMap: bmp, bumpScale: 2.2, roughness: 0.82, metalness: 0 })
+  // the tile is painted around BRICK_GREY (sRGB); scale the tint so a mid brick lands on it
+  const color = new THREE.Color(tint).multiplyScalar(1 / new THREE.Color().setScalar(BRICK_GREY).r)
+  return new THREE.MeshStandardMaterial({ map: m, bumpMap: bmp, bumpScale: 2.2, roughness: 0.82, metalness: 0, color })
 }
 
 /** Sealed dark concrete: a long reflection streak under every tube light. */

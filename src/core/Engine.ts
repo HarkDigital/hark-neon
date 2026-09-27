@@ -267,7 +267,14 @@ export class Engine {
   static supported() {
     try {
       const c = document.createElement('canvas')
-      return !!c.getContext('webgl2')
+      const gl = c.getContext('webgl2')
+      if (!gl) return false
+      // the post chain renders into half-float targets: without a float colour
+      // buffer the page would be black, so take the static copy instead
+      const ok = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))
+      // give the probe context back (browsers cap live contexts)
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+      return ok
     } catch {
       return false
     }

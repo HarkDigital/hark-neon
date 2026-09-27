@@ -64,6 +64,8 @@ const FinalShader = {
     uTrailTint: { value: new THREE.Color('#ff2e97').convertLinearToSRGB() },
     /** 0..1 how far trails pull toward uTrailTint (0 = each tube's own colour) */
     uTrailMix: { value: 0 },
+    /** 0..1 speed dim: the whole frame dims while the page moves fast (flash safety net) */
+    uSpeedDim: { value: 0 },
     /** vibrance (1 = none) and black-point lift */
     uSat: { value: 1.08 },
     uLift: { value: 0 },
@@ -74,7 +76,7 @@ const FinalShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade, uTrail, uTrailDir, uTrailMix, uSat, uLift;
+    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade, uTrail, uTrailDir, uTrailMix, uSat, uLift, uSpeedDim;
     uniform vec2 uResolution;
     uniform vec3 uCutColor, uFadeColor, uTrailTint;
     varying vec2 vUv;
@@ -146,6 +148,9 @@ const FinalShader = {
       col = max(mix(vec3(l), col, uSat), 0.0);
       col = uLift + col * (1.0 - uLift);
 
+      // flash safety net: bright things sweeping past at speed swing each
+      // screen block's luminance; dimming the frame at speed shrinks every swing
+      col *= 1.0 - clamp(uSpeedDim, 0.0, 0.8);
       col = mix(col, vec3(1.0), clamp(uFlash, 0.0, 1.0));
       float v = 1.0 - smoothstep(0.35, 1.05, length(c * vec2(1.0, 0.9)) * 1.4);
       col *= mix(1.0, 0.5 + 0.5 * v, uVignette);
@@ -281,6 +286,7 @@ export class Post {
   /** engine: +1 when the nearest boundary is ahead (leaving a chapter), -1 when behind (entering) */
   cutSide = 1
   private trail = 0
+  private speedDim = 0
   /**
    * Run right before the scene renders each frame, at the TOP level (camera
    * already placed, its matrixWorld updated). Mirrors/reflectors render here
@@ -394,6 +400,16 @@ export class Post {
     const speed = Math.abs(this.velocity)
     const want = this.calm ? 0 : Math.min(0.055, Math.max(0, speed - 1.2) * 0.012) * c.trails
     this.trail += (want - this.trail) * (1 - Math.exp(-8 * dt))
+    // speed dim (WCAG 2.3.1 safety net): the frame dims as the page moves fast,
+    // attack ~0.2 s, release ~0.6 s — slow enough that wheel notches under
+    // reduced motion (instant scroll, spiky velocity) read as one steady dim
+    {
+      const v = Math.abs(this.velocity)
+      const x = Math.max(0, Math.min(1, (v - 1.1) / 2.4))
+      const target = x * x * (3 - 2 * x) * 0.5
+      const tau = target > this.speedDim ? 0.2 : 0.6
+      this.speedDim += (target - this.speedDim) * (1 - Math.exp(-dt / tau))
+    }
     // chapters zero bloom where nothing crosses the threshold: skip the pass entirely
     this.bloom.enabled = c.bloomStrength > 0.01
     this.bloom.strength = c.bloomStrength
@@ -411,6 +427,7 @@ export class Post {
     u.uFade.value = this.fade
     u.uTrail.value = this.trail
     u.uTrailDir.value = this.velocity < 0 ? -1 : 1
+    u.uSpeedDim.value = this.speedDim
     u.uSat.value = c.saturation
     u.uLift.value = c.lift
     if (this.preRender.length) {
