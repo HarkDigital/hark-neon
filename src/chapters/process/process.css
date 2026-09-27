@@ -14,7 +14,8 @@
   max-width: 13ch;
 }
 
-/* the step card: bottom-left, smoked acrylic with a lit tube on its top edge */
+/* the step card: bottom-left, smoked acrylic with a lit tube on its top edge
+   (an opaque plate — no backdrop blur over the animating canvas) */
 .pr-card {
   position: absolute;
   left: var(--gutter);
@@ -23,6 +24,9 @@
   display: grid;
   gap: 8px;
   padding: 20px 24px 22px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(8, 6, 12, 0.88);
 }
 .pr-num {
   display: flex;
@@ -66,7 +70,8 @@
   max-width: 38ch;
 }
 
-/* stats: landscape — a label plate under each numeral (x set from the scene) */
+/* stats: landscape — a label plate hung right under each numeral (x, y,
+   width and a shared height set from the scene: tops and bottoms line up) */
 .pr-stats {
   position: absolute;
   inset: 0;
@@ -75,8 +80,11 @@
 .pr-stat {
   position: absolute;
   left: 0;
-  bottom: var(--safe-bottom);
+  top: 0;
+  box-sizing: border-box;
   width: min(290px, 27vw);
+  display: grid;
+  align-content: center;
   padding: 12px 16px 14px;
   background: rgba(8, 6, 12, 0.8);
   border: 1px solid var(--line);
@@ -151,7 +159,7 @@
   }
   .pr-stat {
     position: relative;
-    bottom: auto;
+    top: auto;
     width: auto;
     padding: 10px 14px 11px;
     display: grid;
@@ -182,5 +190,48 @@
   .pr-card .pr-text {
     font-size: 14px;
     line-height: 1.5;
+  }
+}
+
+/* short landscape (a phone sideways, 200% zoom): the headline on one line,
+   compact step cards and label plates, all between the 52 px chrome bands */
+@media (orientation: landscape) and (max-height: 500px) {
+  .pr-head {
+    top: calc(var(--safe-top) + 4px);
+    gap: 6px;
+    max-width: calc(100vw - 2 * var(--gutter));
+  }
+  .pr-h2 {
+    max-width: none;
+    font-size: clamp(1.5rem, 3.9vw, 2.1rem);
+  }
+  .pr-card {
+    width: min(400px, 48vw);
+    gap: 4px;
+    padding: 12px 16px 14px;
+  }
+  .pr-num {
+    margin: 0;
+  }
+  .pr-num-n {
+    font-size: 22px;
+  }
+  .pr-num-tag {
+    display: none;
+  }
+  .pr-title {
+    font-size: clamp(1.4rem, 3.4vw, 1.8rem);
+  }
+  .pr-card .pr-text {
+    font-size: 13.5px;
+    line-height: 1.45;
+  }
+  .pr-stat {
+    padding: 8px 12px 10px;
+    border-radius: 10px;
+  }
+  .pr-stat-l {
+    font-size: 12.5px;
+    line-height: 1.4;
   }
 }

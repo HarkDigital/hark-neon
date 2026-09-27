@@ -56,6 +56,13 @@
   --wk-c: 255, 214, 236;
   --wk-core: #fff6fb;
 }
+/* no backdrop blur over the animating canvas (it costs GPU on every frame):
+   the smoked acrylic is simply a little more opaque */
+.wk-card.hud-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(8, 6, 12, 0.88);
+}
 .wk-card.hud-panel::before {
   background: var(--wk-core);
   box-shadow:
@@ -103,6 +110,8 @@
   gap: 7px;
 }
 .wk-list a {
+  /* a block box: a name that wraps is still one solid tap target */
+  display: inline-block;
   color: var(--fg);
   text-decoration: none;
   font-family: var(--font-sans);
@@ -123,6 +132,26 @@
 .wk-rest .hud-btn {
   justify-self: start;
   margin-top: 4px;
+}
+/* the name the pickup board's pointer is on (keyboard stop / scroll slot) */
+.wk-list li {
+  position: relative;
+}
+.wk-list li.is-on a {
+  color: #ffd8a6;
+  text-shadow: 0 0 10px rgba(255, 161, 38, 0.55);
+}
+.wk-list li.is-on::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: #ffd9ec;
+  box-shadow: 0 0 6px rgba(255, 46, 151, 0.9), 0 0 12px rgba(255, 46, 151, 0.5);
 }
 
 /* portrait (phones, tablets upright): copy in the bottom band, the sign framed above */
@@ -150,8 +179,11 @@
     font-size: 14.5px;
     line-height: 1.5;
   }
+  /* two columns, filled top to bottom like the board */
   .wk-list {
     grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(5, auto);
+    grid-auto-flow: column;
     gap: 6px 14px;
   }
   .wk-list a {
@@ -166,5 +198,71 @@
   .wk-blurb {
     font-size: 13.5px;
     line-height: 1.42;
+  }
+}
+
+/* short landscape (phones sideways after "Continue anyway", 200% zoom on a
+   laptop): every panel fits between the chrome bands (base.css shrinks them
+   to 52px here) — tighter type, the nine names in two columns */
+@media (orientation: landscape) and (max-height: 500px) {
+  .wk-intro {
+    top: calc(var(--safe-top) + (100% - var(--safe-top) - var(--safe-bottom)) / 2);
+    transform: translateY(-50%);
+    gap: 10px;
+  }
+  .wk-title {
+    font-size: clamp(2.1rem, 5.6vw, 3.4rem);
+  }
+  .wk-card {
+    top: calc(var(--safe-top) + (100% - var(--safe-top) - var(--safe-bottom)) / 2);
+    width: min(360px, 42vw);
+    max-height: calc(100% - var(--safe-top) - var(--safe-bottom) - 8px);
+    gap: 7px;
+    padding: 12px 16px 14px;
+  }
+  .wk-card .hud-label {
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+  .wk-name {
+    font-size: clamp(1.3rem, 2.8vw, 1.65rem);
+  }
+  .wk-blurb {
+    font-size: 13px;
+    line-height: 1.42;
+  }
+  .wk-card .hud-tag {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+  .wk-card .hud-btn {
+    padding: 9px 16px;
+    font-size: 11px;
+  }
+  .wk-visit {
+    margin-top: 0;
+  }
+  /* as wide as the two columns of names (no wrapping), within reason */
+  .wk-rest {
+    width: auto;
+    max-width: min(520px, 62vw);
+    gap: 8px;
+  }
+  .wk-rest-title {
+    font-size: clamp(1.25rem, 2.6vw, 1.5rem);
+  }
+  .wk-list {
+    grid-template-columns: max-content max-content;
+    grid-template-rows: repeat(5, auto);
+    grid-auto-flow: column;
+    gap: 3px 18px;
+  }
+  .wk-list a {
+    font-size: 12.5px;
+    line-height: 1.35;
+    white-space: nowrap;
+  }
+  .wk-rest .hud-btn {
+    margin-top: 2px;
   }
 }

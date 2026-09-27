@@ -3,8 +3,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Chapter, Frame } from '../../core/types'
 import { el, rise, setRise, reveal } from '../../core/dom'
 import { SECTIONS, TESTIMONIALS } from '../../content'
-import { clamp, ease, segment, smoothstep } from '../../core/math'
+import { clamp, ease } from '../../core/math'
 import { nextFrame } from '../../core/yield'
+import { StoryClock } from '../../kit/pace'
 import { beat } from '../common'
 import { neonFromStrokes, neonSpill, textStrokes, Striker, TUBE, type NeonPart, type TubeColor } from '../../kit/neon'
 import type { Stroke } from '../../kit/type'
@@ -24,21 +25,31 @@ import './voices.css'
  * quotation marks and the client's first name in script on a little black
  * name plate the tail points at.
  *
- *   0.00–0.06   intro: a wide, raking shot down the window, the whole chorus
- *               lit; eyebrow + "We listen. They talk."
- *   0.06–0.11   the camera swings square onto bubble 1; the others cut out
- *   0.07–0.95   eight beats (beat(); anchors = centres). Per quote: the
- *               bubble strikes on in its colour, a slow push-in with a
+ *   0.00–0.16   intro: a wide, raking shot down the window, the whole chorus
+ *               lit; eyebrow + "We listen. They talk." held ~0.4 vh clear
+ *               of the cut (landing / intro 0.1)
+ *   0.16–0.95   eight slots (beat(); anchors = centres), one quote each:
+ *               the bubble strikes on in its colour, a slow push-in with a
  *               lateral drift holds while the quote reads INSIDE it
- *               (desktop) or in a panel under it (portrait/phones); between
- *               quotes the camera trucks one bay along, the old bubble cuts
- *               out and the next strikes (one off/on pair, time-limited)
+ *               (desktop), in a panel under it (portrait) or beside it
+ *               (short landscape)
  *   0.95–1.00   out: the last bubble bright for the cut
+ *
+ * PACING (WCAG 2.3.1). A lit bubble nearly fills the frame, so it must never
+ * travel across it: the scroll only says which bay it wants, and a small
+ * time-based director does the rest — the lit bubble holds (≥ MIN_LIT), cuts
+ * out, the camera WALKS the dark window to the wanted bay (an accelerating,
+ * decelerating follower: ~0.6 s a bay, one longer walk after a fling, never a
+ * stop at bays it passes), and the bubble there strikes as the camera
+ * settles. One off/on pair per change, ≤ ~0.8 changes a second at any scroll
+ * speed; reduced motion cuts in the dark instead of walking. The push-in and
+ * the intro creep follow a StoryClock (kit/pace.ts).
  *
  * The glass: a faint dark pane with env sheen, each bubble's glow spilt on
  * it (neonSpill) and its reflection as a dim mirrored duplicate beyond it.
- * Lights (fixed, 4 RectAreaLights): two that follow the lit bubbles
- * (even/odd), one wide strip for the intro chorus, the street's sodium glow.
+ * Lights (fixed, 2 RectAreaLights): one on the lit sign (a single bubble, or
+ * a wide strip over the chorus — it only moves while everything is dark) and
+ * the street's sodium glow.
  */
 
 type Spec = { shape: BubbleShape; a: number; b: number; side: -1 | 1; color: TubeColor; name: string; nameColor: TubeColor }
@@ -68,14 +79,29 @@ const FLOOR = -1.5
 const FOV = 36
 const TAN = Math.tan(((FOV / 2) * Math.PI) / 180)
 
-// story
-const A0 = 0.07
+// story (local): before A0 the chorus + headline, then one slot per quote
+const A0 = 0.16
 const A1 = 0.95
 const SPAN = (A1 - A0) / N
-const CHORUS_END = 0.088
-const SWING = [0.062, 0.106]
-/** the lit bubble changes at most this often (s): ≤ 2 changes a second, whatever the scroll speed */
-const SWITCH_GAP = 0.5
+/** a slot boundary must be crossed by this much (slot units) before the ask changes */
+const HYST = 0.08
+
+// pacing (seconds; see the header)
+/** a bubble that has struck stays lit at least this long */
+const MIN_LIT = 0.6
+/** the chorus, and the headline over it, hold at least this long */
+const MIN_LIT_CHORUS = 1.1
+/** once the lights go out, nothing strikes for this long */
+const MIN_OFF = 0.3
+/** the camera may leave a bay once every tube is below this level */
+const DARK = 0.05
+/** the walk: acceleration (bays/s²) and top speed (bays/s); the swing off the wide shot runs at SWING_K of both */
+const ACC = 12
+const VMAX = 5
+const SWING_K = 0.6
+/** the bubble being walked to warms to this (below the bloom threshold: a ring this dim can cross the frame safely) */
+const PILOT = 0.14
+const NONE = -2
 
 const hex = (c: TubeColor) => TUBE[c]
 
@@ -119,7 +145,7 @@ export default function create(): Chapter {
   const group = new THREE.Group()
   const bubbles: Bubble[] = []
   const B = beat(0, N, A0, A1)
-  let lightA: THREE.RectAreaLight, lightB: THREE.RectAreaLight, chorusLight: THREE.RectAreaLight, streetLight: THREE.RectAreaLight
+  let signLight: THREE.RectAreaLight, streetLight: THREE.RectAreaLight
   let street: ReturnType<typeof bokeh>
   let stage: HTMLElement, root: HTMLElement, probe: HTMLElement
   let intro: HTMLElement, introTitle: HTMLElement
@@ -128,20 +154,133 @@ export default function create(): Chapter {
   let compTop = 1.2
   let compBot = 2
   // layout (per viewport): screen scale and where the body centre sits
-  const L = { W: 0, H: 0, inside: true, ppu: new Array<number>(N).fill(200), bodyY: new Array<number>(N).fill(400), dirty: true }
-  // the lit bubble (-1 = the whole chorus), switched at most every 0.3 s
-  let shown = -1
-  let clock = 0
-  let lastSwitch = -1e9
+  const L = {
+    W: 0,
+    H: 0,
+    inside: true,
+    side: false,
+    ppu: new Array<number>(N).fill(200),
+    bodyX: new Array<number>(N).fill(720),
+    bodyY: new Array<number>(N).fill(400),
+    dirty: true,
+  }
+
+  // ---- the director (time-based; snaps on teleports and on entering)
+  // want: the bay the scroll asks for (-1 = the chorus); pos/vel: the camera's
+  // bay coordinate (-1 = the wide shot) and speed; lit: the lit bay (NONE, -1
+  // = the whole chorus) with the times it struck / went out
+  const D = { init: false, last: 0, now: 0, want: -1, goal: -1, from: -1, pos: -1, vel: 0, lit: -1, litAt: -1e9, offAt: -1e9, landed: true, walkAt: -1e9 }
+  // the push-ins and the intro creep follow a time-paced view of local
+  const pace = new StoryClock({ rate: SPAN * 1.2 })
+  let cl = 0
+  let qc = -1
+  const figV = new Array<number>(N).fill(0)
+  let introV = 0
+  let entering = true
+  let settled = false
+
+  /** the bay the scroll asks for, with hysteresis round the previous ask */
+  function askFor(local: number, prev: number) {
+    const x = (local - A0) / SPAN
+    const raw = x < 0 ? -1 : Math.min(N - 1, Math.floor(x))
+    if (prev < -1 || raw === prev) return raw
+    const lo = prev < 0 ? -Infinity : prev
+    const hi = prev < 0 ? 0 : prev >= N - 1 ? Infinity : prev + 1
+    return x > lo - HYST && x < hi + HYST ? prev : raw
+  }
+
+  /** walk the camera toward a bay: accelerate, cruise, brake to land on it */
+  function walk(target: number, dt: number) {
+    const k = D.pos < 0 || target < 0 ? SWING_K : 1
+    const acc = ACC * k
+    const d = target - D.pos
+    const vWant = clamp(Math.sign(d) * Math.sqrt(2 * acc * Math.abs(d)), -VMAX * k, VMAX * k)
+    D.vel += clamp(vWant - D.vel, -acc * dt, acc * dt)
+    const next = D.pos + D.vel * dt
+    if ((target - next) * d <= 0 || Math.abs(target - next) < 1e-4) {
+      D.pos = target
+      D.vel = 0
+    } else D.pos = next
+  }
+
+  /** the bubble the camera is walking to (or has landed on, waiting to strike): it warms to PILOT */
+  function piloting() {
+    return D.lit === NONE && D.goal >= 0 && (D.pos !== D.goal || D.landed) ? D.goal : NONE
+  }
+
+  function direct(local: number, dt: number, rm: boolean, moving: boolean) {
+    D.now += dt
+    const tele = !D.init || Math.abs(local - D.last) > 0.05
+    D.last = local
+    D.want = askFor(local, tele ? -3 : D.want)
+    if (tele) {
+      D.init = true
+      D.pos = D.goal = D.from = D.want
+      D.vel = 0
+      D.litAt = D.offAt = -1e9
+      D.landed = true
+    }
+    // (the pilot glow on the bubble being walked to doesn't count as lit)
+    let maxL = 0
+    const pilot = piloting()
+    for (let i = 0; i < N; i++) if (i !== pilot) maxL = Math.max(maxL, bubbles[i].level)
+    // commit a walk goal. A walk in progress only re-aims early on or to turn
+    // back; otherwise it LANDS (and that bay strikes) before walking on — a
+    // steady scroll never chases a moving target through an unlit window
+    const dark = D.lit === NONE && maxL < DARK
+    // while the page is still moving, a leg is short (off the wide shot it
+    // lands on the first bubble, then ≤ 2 bays), so a steady scroll passes
+    // lit quotes, not a long dark window; at rest it walks straight there
+    const hi = moving ? (D.pos < 0 ? 0 : Math.round(D.pos) + 2) : N - 1
+    const lo = moving ? (D.pos <= 0 ? -1 : Math.round(D.pos) - 2) : -1
+    const aim = clamp(D.want, lo, hi)
+    if (aim !== D.goal && dark) {
+      const walking = D.pos !== D.goal
+      const reverse = walking && Math.sign(aim - D.pos) !== Math.sign(D.goal - D.pos)
+      if (!walking || reverse || D.now - D.walkAt < 0.25) {
+        if (!walking || reverse) {
+          D.from = D.pos
+          D.walkAt = D.now
+        }
+        D.goal = aim
+      }
+    }
+    // the camera only moves in the dark (reduced motion: a cut, no walk)
+    if (D.pos !== D.goal && dark) {
+      if (rm) {
+        D.pos = D.goal
+        D.vel = 0
+      } else walk(D.goal, dt)
+      if (D.pos === D.goal) D.landed = true
+    } else D.vel = 0
+    // a lit bay holds while asked for (and at least its minimum); a bay
+    // strikes once the camera has landed on it, even if the scroll moved on
+    const minLit = D.lit === -1 ? MIN_LIT_CHORUS : MIN_LIT
+    let lit = NONE
+    if (D.lit !== NONE && (D.lit === D.want || D.now - D.litAt < minLit)) lit = D.lit
+    else if (D.lit === NONE && D.pos === D.goal && (D.landed || D.goal === D.want) && D.now - D.offAt >= MIN_OFF) lit = D.goal
+    if (lit !== D.lit) {
+      if (lit === NONE) {
+        D.offAt = D.now
+        D.landed = false
+      } else D.litAt = D.now
+      D.lit = lit
+    }
+  }
 
   function layout(fw: number, fh: number) {
     L.W = fw
     L.H = fh
     L.dirty = false
-    const inside = fw >= 900 && fw / fh >= 1.15
+    // desktop: the quote inside its bubble; short landscape (phones sideways,
+    // 200% zoom): the quote docked right, the bubble left; portrait: a panel under it
+    const inside = fw >= 900 && fw / fh >= 1.15 && fh >= 560
+    const side = !inside && fw / fh >= 1.2
     L.inside = inside
+    L.side = side
     root.classList.toggle('vc-inside', inside)
     root.classList.toggle('vc-panel', !inside)
+    root.classList.toggle('vc-side', side)
     for (const f of figs) f.classList.toggle('hud-panel', !inside)
     const sr = stage.getBoundingClientRect()
     const pr = probe.getBoundingClientRect()
@@ -166,7 +305,19 @@ export default function create(): Chapter {
       const bodyY = (bandTop + bandBot) / 2 - ((compBot - compTop) / 2) * ppu
       root.style.setProperty('--vc-y', `${bodyY.toFixed(1)}px`)
       L.ppu.fill(ppu)
+      L.bodyX.fill(fw / 2)
       L.bodyY.fill(bodyY)
+    } else if (side) {
+      // the bubble framed in the room left of the docked panel, between the bands
+      const gut = (intro.getBoundingClientRect().left - sr.left) * scale
+      figs.forEach((f, i) => {
+        const left = (f.getBoundingClientRect().left - sr.left) * scale
+        const room = left - gut - 8
+        const ppu = Math.max(30, Math.min(room / 4.7, (bandBot - bandTop) / comp))
+        L.ppu[i] = ppu
+        L.bodyX[i] = gut + room / 2
+        L.bodyY[i] = (bandTop + bandBot) / 2 - ((compBot - compTop) / 2) * ppu
+      })
     } else {
       figs.forEach((f, i) => {
         const h = f.offsetHeight * scale
@@ -174,6 +325,7 @@ export default function create(): Chapter {
         const bb = panelTop - 14
         const ppu = Math.max(40, Math.min((fw * 0.9) / 4.9, (bb - bandTop) / comp))
         L.ppu[i] = ppu
+        L.bodyX[i] = fw / 2
         L.bodyY[i] = (bandTop + bb) / 2 - ((compBot - compTop) / 2) * ppu
       })
     }
@@ -202,7 +354,7 @@ export default function create(): Chapter {
     const d = L.H / (2 * TAN * ppu)
     const up = (L.H / 2 - L.bodyY[k]) / ppu
     const dir = k % 2 ? 1 : -1
-    const x = k * S
+    const x = k * S + (L.W / 2 - L.bodyX[k]) / ppu
     tgt.set(x, Y_B - up, Z_B)
     pos.set(x + dir * (s - 0.5) * drift, Y_B - up + 0.32, Z_B + d)
   }
@@ -220,7 +372,6 @@ export default function create(): Chapter {
     return 52
   }
 
-  const q = (local: number) => (local - A0) / SPAN
   const push = (k: number, qq: number) => {
     const s = (qq - k + 0.15) / 1.3
     return k === N - 1 ? clamp(s, 0, 1.3) : clamp(s)
@@ -344,7 +495,7 @@ export default function create(): Chapter {
         const cx = (minX + maxX) / 2
         const cy = (minY + maxY) / 2
         const nameStrokes: Stroke[] = nameT.strokes.map(s => ({ pts: s.pts.map(p => new THREE.Vector3(p.x - cx, p.y - cy, 0)) }))
-        const name = neonFromStrokes(nameStrokes, { color: sp.nameColor, radius: 0.0082, hdr: 3.8, radial, depth: 0.05 })
+        const name = neonFromStrokes(nameStrokes, { color: sp.nameColor, radius: 0.0082, hdr: 3.8, radial, depth: 0.05, caps: false })
         const plate = new THREE.Group()
         plate.position.set(geo.tip.x + sp.side * 0.08, Math.min(PLATE_TOP, geo.tip.y - 0.1) - ph / 2, -0.02)
         // black acrylic face (1.2 cm) on a brushed steel sheet whose edge
@@ -443,14 +594,12 @@ export default function create(): Chapter {
       compBot = bot + 0.04
       group.add(new THREE.Mesh(mergeGeometries(chains)!, steelMaterial()))
 
-      // ---------------------------------------------------------------- lights (4, fixed)
-      lightA = new THREE.RectAreaLight(0xffffff, 0, 4.2, 1.2)
-      lightB = new THREE.RectAreaLight(0xffffff, 0, 4.2, 1.2)
-      chorusLight = new THREE.RectAreaLight(new THREE.Color('#ff8fc6'), 0, 5 * S, 1.2)
-      chorusLight.position.set(2 * S, Y_B - 0.6, Z_B + 0.3)
-      chorusLight.lookAt(2 * S, FLOOR, Z_B + 3)
+      // ---------------------------------------------------------------- lights (2, fixed)
+      // the sign light: under the lit bubble, or a wide strip under the
+      // chorus; it's only moved / resized while every tube is dark
+      signLight = new THREE.RectAreaLight(0xffffff, 0, 4.2, 1.2)
       streetLight = new THREE.RectAreaLight(new THREE.Color('#ffa126'), 0, 26, 3)
-      group.add(lightA, lightB, chorusLight, streetLight)
+      group.add(signLight, streetLight)
 
       // ---------------------------------------------------------------- DOM
       root = el('div', 'vc-root vc-inside', undefined, ctx.stage)
@@ -475,115 +624,114 @@ export default function create(): Chapter {
     },
 
     onEnter() {
-      lastSwitch = -1e9
+      D.init = false
+      pace.reset()
+      entering = true
     },
 
     busy() {
-      return bubbles.some(b => (b.level > 0.001 && b.level < 0.999) || (b.draw > 0 && b.draw < 1)) || clock - lastSwitch < SWITCH_GAP + 0.05
+      return !settled
     },
 
     update(local, frame, ctx) {
       if (L.dirty || frame.width !== L.W || frame.height !== L.H) layout(frame.width, frame.height)
       const dt = frame.dt
-      clock += dt
-      // calm: no stutters. While the page is moving at all, quotes change by a
-      // cross-fade with no dark gap between them (a scroll through eight
-      // bubbles must not read as eight flashes); a bubble only STRIKES when
-      // the reader has come (nearly) to rest on it
-      const calm = ctx.reducedMotion || !!frame.still || Math.abs(frame.velocity) > 0.35
-      const instant = ctx.reducedMotion || !!frame.still
-      const qq = q(local)
+      const rm = ctx.reducedMotion
+      // calm: no stutters (reduced motion, Motion off, or while the page is
+      // still moving — a bubble only STRIKES when the reader has come to rest)
+      const calm = rm || !!frame.still || Math.abs(frame.velocity) > 0.2
+      const instant = rm || !!frame.still
+      cl = pace.update(local, dt)
+      qc = (cl - A0) / SPAN
+      direct(local, dt, rm, Math.abs(frame.velocity) > 0.2)
+      const pilot = piloting()
 
-      // which bubble is lit: the chorus for the intro, then one at a time
-      const want = local < CHORUS_END ? -1 : clamp(Math.floor(qq), 0, N - 1)
-      if (want !== shown && clock - lastSwitch >= SWITCH_GAP) {
-        shown = want
-        lastSwitch = clock
-      }
       let maxL = 0
       let sumL = 0
+      let hot = -1
       for (let i = 0; i < N; i++) {
         const b = bubbles[i]
-        const on = shown === -1 || shown === i
-        if (calm) {
-          const tgt = on ? 1 : 0
-          const rate = dt / (on ? 0.22 : 0.32)
-          b.level = tgt > b.level ? Math.min(tgt, b.level + rate) : Math.max(tgt, b.level - rate)
-          b.striker.set(b.level)
-        } else b.level = b.striker.update(on, dt, false)
+        const on = D.lit === -1 || D.lit === i
+        const warm = i === pilot ? PILOT * clamp(1.4 - Math.abs(D.pos - i)) : 0
+        if (entering) b.striker.set(on ? 1 : 0)
+        b.level = b.striker.update(on ? true : warm, dt, calm)
         b.outline.setLevel(b.level)
         b.open.setLevel(b.level)
         b.close.setLevel(b.level)
         // the name writes itself along its tube once the bubble has struck
         if (b.level < 0.05) b.draw = 0
-        else if (b.level > 0.6) b.draw = instant ? 1 : Math.min(1, b.draw + dt / 0.55)
+        else if (b.level > 0.6) b.draw = instant || entering ? 1 : Math.min(1, b.draw + dt / 0.55)
         b.name.setLevel(b.level)
         b.name.setDraw(ease.outQuad(b.draw))
         const gl = b.level * 0.32
         b.ghostMat.opacity = gl
         // (no reflections for the chorus: a window of doubled tubes reads as noise)
-        for (const g of b.ghosts) g.visible = gl > 0.004 && shown >= 0
+        for (const g of b.ghosts) g.visible = gl > 0.004 && D.pos > -0.5
         ;(b.pool.material as THREE.MeshBasicMaterial).opacity = b.level * 0.45
         b.pool.visible = b.level > 0.004
-        maxL = Math.max(maxL, b.level)
+        if (b.level > maxL) {
+          maxL = b.level
+          hot = i
+        }
         sumL += b.level
       }
-      // lights: A follows the brightest even bubble, B the brightest odd one
+      // the sign light: a strip under the chorus, or under the one lit bubble
+      // (they never overlap: the chorus goes dark before anything else strikes)
       const chorusAmt = clamp((sumL - maxL) / (N - 1))
-      const place = (light: THREE.RectAreaLight, parity: number) => {
-        let best = -1
-        let bl = 0
-        for (let i = parity; i < N; i += 2)
-          if (bubbles[i].level > bl) {
-            bl = bubbles[i].level
-            best = i
-          }
-        if (best < 0) {
-          light.intensity = 0
-          return
-        }
-        const sp = SPECS[best]
-        light.color.set(hex(sp.color))
-        light.position.set(best * S, Y_B - 0.55, Z_B + 0.2)
-        light.lookAt(best * S, FLOOR, Z_B + 2.6)
-        light.intensity = bl * (sp.color === 'white' ? 5 : 9) * (1 - chorusAmt * 0.85)
+      if (hot < 0) signLight.intensity = 0
+      else if (chorusAmt > 0.02 || D.lit === -1) {
+        signLight.color.set('#ff8fc6')
+        signLight.width = 5 * S
+        signLight.position.set(2 * S, Y_B - 0.6, Z_B + 0.3)
+        signLight.lookAt(2 * S, FLOOR, Z_B + 3)
+        signLight.intensity = (sumL / N) * 7
+      } else {
+        const sp = SPECS[hot]
+        signLight.color.set(hex(sp.color))
+        signLight.width = 4.2
+        signLight.position.set(hot * S, Y_B - 0.55, Z_B + 0.2)
+        signLight.lookAt(hot * S, FLOOR, Z_B + 2.6)
+        signLight.intensity = maxL * (sp.color === 'white' ? 5 : 9)
       }
-      place(lightA, 0)
-      place(lightB, 1)
-      chorusLight.intensity = chorusAmt * 7
 
       // the camera's bay (also steers the street light and the haze colour)
-      const focusX = clamp(Math.round(qq - 0.5), 0, N - 1) * S
+      const bay = clamp(D.pos, 0, N - 1)
+      const focusX = bay * S
       streetLight.position.set(focusX + 2, 6.5, -5)
       streetLight.lookAt(focusX + 2, -0.5, 2.5)
       streetLight.intensity = 1.6
 
-      const active = shown < 0 ? 0 : shown
+      const active = D.lit >= 0 ? D.lit : Math.round(bay)
       const w = ctx.world.params
       w.top = '#07060e'
       w.bottom = '#0b0812'
       w.glow = 0.22
-      w.glowColor = hex(SPECS[active].color)
+      w.glowColor = hex(SPECS[D.lit === -1 ? 0 : active].color)
       w.fog = 0.016
       w.fogColor = '#0a0812'
       w.motes = 0.3
-      w.moteColor = hex(SPECS[active].color)
+      w.moteColor = hex(SPECS[D.lit === -1 ? 0 : active].color)
       w.env = 0.6
       w.fill = 0.14
 
       // ---------------------------------------------------------------- copy
+      // the headline lives with the lit chorus; a quote with its lit bubble,
+      // while the scroll still asks for it (paced by the director, not the scroll)
+      const fin = dt / (instant ? 0.12 : 0.32)
+      const fout = dt / 0.16
+      const toward = (v: number, t: number) => (entering ? t : t > v ? Math.min(t, v + fin) : Math.max(t, v - fout))
+      introV = toward(introV, D.lit === -1 ? 1 : 0)
+      reveal(intro, ease.inOutQuad(introV))
+      setRise(introTitle, D.lit === -1 && local > 0.012)
       let textVis = 0
-      reveal(intro, 1 - smoothstep(0.074, 0.088, local))
-      setRise(introTitle, local > 0.012 && local < 0.09)
       for (let i = 0; i < N; i++) {
-        const vin = i === 0 ? smoothstep(0.098, 0.108, local) : smoothstep(i + 0.07, i + 0.13, qq)
-        const vout = 1 - smoothstep(i + 0.86, i + 0.92, qq)
-        const v = vin * vout
-        reveal(figs[i], v, 0)
-        textVis = Math.max(textVis, v)
+        // (once the strike has settled, so a stutter never blinks the words)
+        figV[i] = toward(figV[i], D.lit === i && D.want === i && (entering || D.now - D.litAt > 0.24) ? 1 : 0)
+        reveal(figs[i], ease.inOutQuad(figV[i]), 0)
+        textVis = Math.max(textVis, figV[i])
       }
       // stop down the street lights behind the words (desktop: inside the bubble)
-      const k = clamp(Math.round(qq - 0.5), 0, N - 1)
+      const k = Math.round(bay)
       const ppu = L.ppu[k]
       street.update(
         ctx.reducedMotion ? 0 : frame.time,
@@ -594,6 +742,17 @@ export default function create(): Chapter {
         ((TEXT_H * 0.5 + 0.25) * ppu) / (L.H / 2),
         L.inside ? textVis * 0.8 : 0,
       )
+
+      const done = (v: number) => v === 0 || v === 1
+      settled =
+        !pace.busy &&
+        D.pos === D.goal &&
+        D.goal === D.want &&
+        D.lit === D.want &&
+        done(introV) &&
+        figV.every(done) &&
+        bubbles.every(b => done(b.level) && done(b.draw))
+      entering = false
     },
 
     camera(local, frame: Frame, out) {
@@ -601,40 +760,37 @@ export default function create(): Chapter {
         L.W = frame.width
         L.H = frame.height
       }
-      const qq = q(local)
       const p0 = out.position
       const t0 = out.target
-      const p1 = _p1
-      const t1 = _t1
-      let fov = FOV
-      // reduced motion: the moves between bays stay (they're the story), the drift and arcs go
+      // reduced motion: no drift, no arcs (and no walks: the director cuts in the dark)
       const drift = frame.reducedMotion ? 0 : 1
-      if (local < SWING[1]) {
-        const f0 = introPose(p0, t0)
-        bubblePose(0, push(0, qq), p1, t1, drift)
-        const w = ease.inOutCubic(segment(local, SWING[0], SWING[1]))
-        fov = f0 + (FOV - f0) * w
-        // a slow creep in the wide shot before the swing
-        p0.x += segment(local, 0, SWING[0]) * 0.8 * drift
-        p0.lerp(p1, w)
-        t0.lerp(t1, w)
-        p0.y += Math.sin(Math.PI * w) * 0.4 * drift
-      } else {
-        // bay to bay over q ∈ [i + 0.86, i + 1.12]
-        const t = qq - 0.86
-        const n = Math.floor(t)
-        const w = ease.inOutCubic(clamp((t - n) / 0.26))
-        const k0 = clamp(n, 0, N - 1)
-        const k1 = clamp(n + 1, 0, N - 1)
-        bubblePose(k0, push(k0, qq), p0, t0, drift)
-        if (k1 !== k0 && w > 0) {
-          bubblePose(k1, push(k1, qq), p1, t1, drift)
-          p0.lerp(p1, w)
-          t0.lerp(t1, w)
-          // a small dolly back mid-move: the next bay swings into view
-          p0.z += Math.sin(Math.PI * w) * 1.4 * drift
-          p0.y += Math.sin(Math.PI * w) * 0.2 * drift
+      let fov = FOV
+      if (D.pos < 0) {
+        // the wide shot (-1) ⇄ bubble 1 (0): the swing
+        const w = D.pos + 1
+        fov = introPose(p0, t0)
+        // a slow creep in the wide shot while the headline reads
+        p0.x += clamp(cl / A0) * 0.8 * drift
+        if (w > 0) {
+          bubblePose(0, push(0, qc), _p1, _t1, drift)
+          p0.lerp(_p1, w)
+          t0.lerp(_t1, w)
+          p0.y += Math.sin(Math.PI * w) * 0.4 * drift
+          fov += (FOV - fov) * w
         }
+      } else {
+        const k0 = Math.min(N - 1, Math.floor(D.pos))
+        const f = D.pos - k0
+        bubblePose(k0, push(k0, qc), p0, t0, drift)
+        if (f > 1e-5 && k0 < N - 1) {
+          bubblePose(k0 + 1, push(k0 + 1, qc), _p1, _t1, drift)
+          p0.lerp(_p1, f)
+          t0.lerp(_t1, f)
+        }
+        // stepping back while walking the dark window: the next bays swing into view
+        const back = Math.min(2.2, Math.abs(D.vel) * 0.5)
+        p0.z += back
+        p0.y += back * 0.14
       }
       out.fov = fov
       out.parallax = 0.14

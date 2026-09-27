@@ -22,8 +22,9 @@ import { brickMaterial, concreteMaterial, fluorescentFixture, tubeLight } from '
  *   the rest of the shop two fluorescent fixtures, an amber arrow pointing at
  *                       the door, a UV star — the lights that go out at closing
  *
- * Six RectAreaLights, fixed: the two fixtures, OPEN (into the room), and one
- * halo on the brick for each wall sign.
+ * Two RectAreaLights, fixed (desktop and phones): OPEN's wash on the door and
+ * the brick round it, and the halo behind "Say hello.". Everything else lights
+ * the room with additive spills and the world's fill.
  */
 
 export const DOOR = {
@@ -412,13 +413,13 @@ export function buildShop(group: THREE.Group, mobile: boolean) {
   for (const p of samplesAlong(helloT.strokes, 0.34, 0.5)) supports.push({ at: p.clone().add(hello.position).setZ(0.002), len: 0.05 })
 
   // ---------------------------------------------------------------- the other signs (they close first)
-  const wallSign = (strokes: Stroke[], color: string, x: number, y: number, rad: number, hdr: number, w: number, h: number, smooth = true) => {
+  const wallSign = (strokes: Stroke[], color: string, x: number, y: number, rad: number, hdr: number, w: number, h: number, smooth = true, strength = 0.5) => {
     const g = new THREE.Group()
     g.position.set(x, y, 0.045)
     group.add(g)
     const part = neonFromStrokes(strokes, { color, radius: rad, hdr, radial, depth: 0.04, smooth })
     g.add(part.group)
-    const sp = neonSpill(strokes, { color, width: w, height: h, blur: 0.08, strength: 0.5 })
+    const sp = neonSpill(strokes, { color, width: w, height: h, blur: 0.08, strength })
     sp.position.z = -0.043
     g.add(sp)
     part.follow(sp)
@@ -430,7 +431,11 @@ export function buildShop(group: THREE.Group, mobile: boolean) {
     { pts: fillet([[-0.42, 0], [0.34, 0]], 0.02) },
     { pts: fillet([[0.12, 0.19], [0.37, 0], [0.12, -0.19]], 0.03, false, 6) },
   ]
-  const arrow = wallSign(arrowStrokes, TUBE.amber, -1.32, 1.46, 0.0085, 4, 1.4, 0.9, false)
+  // (its spill carries the halo the old wall light used to add). It hangs far
+  // enough from the door that the closing frame (door + "Say hello.") holds
+  // clear of it instead of cropping it.
+  const arrowX = -1.84
+  const arrow = wallSign(arrowStrokes, TUBE.amber, arrowX, 1.46, 0.0085, 4, 1.5, 0.95, false, 0.62)
   // a UV star, higher and further along the wall
   const star: [number, number][] = []
   for (let i = 0; i < 10; i++) {
@@ -438,7 +443,7 @@ export function buildShop(group: THREE.Group, mobile: boolean) {
     const rr = i % 2 ? 0.13 : 0.3
     star.push([Math.cos(a) * rr, Math.sin(a) * rr])
   }
-  const starSign = wallSign([{ pts: fillet(star, 0.025, true, 5), closed: true }], TUBE.violet, -2.55, 2.2, 0.0085, 4.4, 1.1, 1.1, false)
+  const starSign = wallSign([{ pts: fillet(star, 0.025, true, 5), closed: true }], TUBE.violet, -2.72, 2.24, 0.0085, 4.4, 1.1, 1.1, false)
 
   // ---------------------------------------------------------------- tube supports (one instanced mesh)
   const supG = new THREE.CylinderGeometry(0.0045, 0.0045, 1, 6)
@@ -451,8 +456,9 @@ export function buildShop(group: THREE.Group, mobile: boolean) {
 
   // ---------------------------------------------------------------- fluorescents
   const rodMat = new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.5, metalness: 0.7 })
-  const fixture = (x: number, z: number, len: number, intensity: number) => {
-    const f = fluorescentFixture(len, { intensity })
+  const fixture = (x: number, z: number, len: number) => {
+    // no RectAreaLight: the review measured them barely visible here and ~1/6 of the GPU frame each
+    const f = fluorescentFixture(len, { light: false })
     f.group.position.set(x, 2.98, z)
     const rodG = mergeGeometries(
       [-1, 1].map(s => {
@@ -465,35 +471,27 @@ export function buildShop(group: THREE.Group, mobile: boolean) {
     group.add(f.group)
     return f
   }
-  const flA = fixture(-1.65, 0.7, 1.2, 16)
-  const flB = fixture(1.55, 0.95, 1.2, 16)
+  const flA = fixture(-1.65, 0.7, 1.2)
+  const flB = fixture(1.55, 0.95, 1.2)
   // bare white tubes bloom ~3x harder than coloured ones
   flA.part.setHdr(2.1)
   flB.part.setHdr(2.1)
 
-  // ---------------------------------------------------------------- the signs' light on the room (4 + 2 fixtures = 6)
-  // a thin emitter: on the sealed floor its reflection is a streak, not a slab
-  const openLight = tubeLight(openPart, { width: 0.5, height: 0.08, intensity: 6 })
-  openLight.position.set(0, DOOR.sign.y, 0.02)
-  openLight.lookAt(0, DOOR.sign.y - 0.25, 3)
+  // ---------------------------------------------------------------- the signs' light on the room: TWO RectAreaLights
+  // (the budget is ≤ 3, ≤ 2 on phones; each costs every lit fragment). One per
+  // tube at most: OPEN's red on the door and the brick round it, and "Say
+  // hello."'s halo on the brick. The fixtures, the arrow and the star light the
+  // room through their spills and the world's fill (the chapter drives it from
+  // the fixtures' levels), never a light of their own.
+  const openLight = tubeLight(openPart, { width: 1.2, height: 0.75, intensity: 4.4 })
+  openLight.position.set(0, DOOR.sign.y + 0.05, 0.42)
+  openLight.lookAt(0, DOOR.sign.y - 0.1, -1)
   group.add(openLight)
   syncs.push(() => openLight.sync())
-  const wallLight = (part: NeonPart, x: number, y: number, w: number, h: number, i: number, sync = true) => {
-    const l = tubeLight(part, { width: w, height: h, intensity: i })
-    l.position.set(x, y, 0.16)
-    l.lookAt(x, y, -1)
-    group.add(l)
-    if (sync) syncs.push(() => l.sync())
-    return l
-  }
-  const helloLight = wallLight(helloPart, helloX, 1.78, helloT.width * 0.9, 0.5, 6, false)
-  wallLight(arrow.part, -1.3, 1.46, 0.7, 0.3, 5)
-  // the sign's red on the door and the brick round it (a wash from the room side)
-  const doorLight = tubeLight(openPart, { width: 1.1, height: 0.7, intensity: 4 })
-  doorLight.position.set(0, DOOR.sign.y + 0.05, 0.42)
-  doorLight.lookAt(0, DOOR.sign.y - 0.1, -1)
-  group.add(doorLight)
-  syncs.push(() => doorLight.sync())
+  const helloLight = tubeLight(helloPart, { width: helloT.width * 0.9, height: 0.5, intensity: 6 })
+  helloLight.position.set(helloX, 1.78, 0.16)
+  helloLight.lookAt(helloX, 1.78, -1)
+  group.add(helloLight)
 
   return {
     openPart,
@@ -505,6 +503,8 @@ export function buildShop(group: THREE.Group, mobile: boolean) {
     flB,
     helloWidth: helloT.width,
     helloX,
+    /** the arrow's tip (right end): closing frames keep their left edge clear of it */
+    arrowTip: arrowX + 0.37 + 0.01,
     sync() {
       for (const s of syncs) s()
     },

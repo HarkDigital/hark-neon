@@ -9,18 +9,21 @@ import '../chapter.css'
 import './contact.css'
 
 /*
- * CONTACT · "Open Late" — the shop's front door at closing time, from inside.
+ * CONTACT · "The Front Door" — the shop's front door at closing time, from inside.
  *
  *   0.00–0.28  walking up to the door: the room is lit; the OPEN sign strikes
  *              on (blue border, then the red letters); "Say hello." writes
  *              itself along its tube on the brick beside the door
  *   0.30–0.85  settled (landing 0.3): the copy panel — eyebrow, "Say hello.",
  *              body, the email as a lit tube, Copy email, the other concepts,
- *              Back to top, footer. Phones: panel in the bottom band, the OPEN
- *              sign above it (narrow phones step the panel in two beats)
- *   0.85–1.00  closing time: the fixtures, the wall signs and "Say hello." cut
- *              out one by one; the camera settles square on the door, where
- *              OPEN is still glowing; the sign-off (Back to top + footer)
+ *              Back to top, footer. The door and "Say hello." stay framed
+ *              beside it (landscape) or above it (portrait). Narrow phones and
+ *              short landscape (phone sideways, 200% zoom) step the panel in
+ *              two beats: the email card, then the other concepts
+ *   0.85–1.00  closing time: the fixtures, the star and the arrow cut out one
+ *              by one; the camera settles on the door and "Say hello." — the
+ *              last two lights in the shop — above the sign-off (Back to top +
+ *              footer)
  *
  * Everything derives from `local`; Strikers are the only time-based state.
  */
@@ -93,8 +96,13 @@ export default function create(): Chapter {
   let title: HTMLElement
   let end: HTMLElement
   let panelH = 420
+  // the dock's edges and the sign-off's top (px): the camera frames the scene
+  // beside / above them (measured on resize, never per frame)
+  const m = { dockR: 0, dockTop: 0, dockBot: 0, endTop: 0 }
   // split mode shows one part at a time: frame the sign above the taller one
   const partH = [0, 0]
+  // short landscape: the same query as contact.css (and base.css's chrome bands)
+  let shortMq: MediaQueryList | null = null
   let showB = false
   let portrait = false
   let split = false
@@ -125,12 +133,13 @@ export default function create(): Chapter {
     init(ctx) {
       shop = buildShop(group, ctx.mobile)
 
-      // the shop's lights, in closing order (fixtures first, OPEN never)
+      // the shop's lights, in closing order (fixtures first; OPEN and "Say hello." never)
       lamp(new Striker({ stutters: 1, depth: 0.45 }), v => shop.flB.setLevel(v), l => l < 0.862)
       lamp(new Striker({ stutters: 1, depth: 0.45 }), v => shop.flA.setLevel(v), l => l < 0.882)
       lamp(new Striker({ stutters: 1 }), part(shop.starPart), l => l < 0.902)
       lamp(new Striker({ stutters: 1 }), part(shop.arrowPart), l => l < 0.92)
-      lamp(new Striker({ stutters: 0, ramp: 0.14 }), part(shop.helloPart), l => l >= 0.075 && l < 0.94)
+      // "Say hello." stays lit with OPEN to the end: the invitation outlasts closing time
+      lamp(new Striker({ stutters: 0, ramp: 0.14 }), part(shop.helloPart), l => l >= 0.075)
       lamp(new Striker({ stutters: 1 }), part(shop.borderPart), l => l >= 0.1)
       lamp(new Striker({ stutters: 2 }), part(shop.openPart), l => l >= 0.13)
 
@@ -181,11 +190,24 @@ export default function create(): Chapter {
       top2.addEventListener('click', () => window.__hark?.land('hero'))
       el('p', 'hud-label ct-legal ct-legal--end', `© ${new Date().getFullYear()} ${BRAND.name} · ${BRAND.locale}`, end)
 
+      shortMq = window.matchMedia?.('(orientation: landscape) and (max-height: 500px)') ?? null
+
       // measure the panel only when it changes size (no per-frame layout reads)
       if (typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(() => {
           panelH = panel.offsetHeight || panelH
         }).observe(panel)
+        // the dock spans the band between the chrome, so it resizes with the viewport
+        const measure = () => {
+          if (!dock.offsetHeight) return
+          m.dockR = dock.offsetLeft + dock.offsetWidth
+          m.dockTop = dock.offsetTop
+          m.dockBot = dock.offsetTop + dock.offsetHeight
+          if (end.offsetHeight) m.endTop = end.offsetTop
+        }
+        const ro = new ResizeObserver(measure)
+        ro.observe(dock)
+        ro.observe(end)
         // a hidden part reports 0: keep its last real height
         ;[partA, partB].forEach((node, i) =>
           new ResizeObserver(() => {
@@ -206,7 +228,7 @@ export default function create(): Chapter {
     update(local, frame, ctx) {
       // layout mode from the viewport (cheap; classes only change on a flip)
       const p = frame.height > frame.width
-      const sp = p && frame.width < 600
+      const sp = (p && frame.width < 600) || (!p && !!shortMq?.matches)
       if (p !== portrait) root.classList.toggle('is-portrait', (portrait = p))
       if (sp !== split) root.classList.toggle('is-split', (split = sp))
 
@@ -234,7 +256,7 @@ export default function create(): Chapter {
       w.top = '#040307'
       w.bottom = '#0a0710'
       w.glow = lerp(0.2, 0.08, k)
-      w.glowColor = k > 0.5 ? '#ff4220' : '#ff2e97'
+      w.glowColor = '#ff2e97'
       w.fog = 0.03
       w.fogColor = '#07050b'
       w.motes = lerp(0.42, 0.14, k)
@@ -245,8 +267,8 @@ export default function create(): Chapter {
 
       // ------------------------------------------------ copy
       let pv = smoothstep(0.2, 0.265, local) * (1 - smoothstep(0.84, 0.885, local))
-      // narrow phones: the panel steps from the email to the other concepts,
-      // dipping out for a moment while it changes size
+      // narrow phones and short landscape: the panel steps from the email to
+      // the other concepts, dipping out for a moment while it changes size
       const b = split && local >= 0.56
       if (b !== showB) panel.classList.toggle('show-b', (showB = b))
       if (split) pv *= 1 - smoothstep(0.535, 0.552, local) * (1 - smoothstep(0.568, 0.585, local))
@@ -259,36 +281,52 @@ export default function create(): Chapter {
       const w = Math.max(1, frame.width)
       const h = Math.max(1, frame.height)
       const aspect = w / h
+      // the subject: the door (OPEN) and "Say hello." beside it — the two
+      // lights that stay on to the end, framed whole in every settled shot
       const doorL = -DOOR.halfW
       const helloR = shop ? shop.helloX + shop.helloWidth / 2 : 3
       const subCx = (doorL + helloR) / 2
       const subHw = (helloR - doorL) / 2 + 0.12
+      const subCy = 1.61
+      const subHh = 0.42
+      // the chrome band's top and the sign-off's top (measured; fallbacks until then)
+      const bandTop = (m.dockTop || Math.min(112, Math.max(80, 0.105 * h))) / h
+      const endTop = m.endTop ? (m.endTop - 14) / h : 0.74
       if (h > w) {
-        // portrait: establishing → the wall while "Say hello." writes → the sign in the top band
+        // portrait: establishing → the wall while "Say hello." writes → door +
+        // "Say hello." in the top band above the panel → the same pair, centred
+        // above the sign-off
         const fov = 50
-        const safeTop = Math.min(112, Math.max(80, 0.105 * h)) / h
-        const safeBot = Math.min(110, Math.max(82, 0.105 * h)) / h
+        const dockBot = m.dockBot || h - Math.min(110, Math.max(82, 0.105 * h))
         const ph = split ? Math.max(partH[0], partH[1]) + 36 || panelH : panelH
-        const bandBottom = clamp(1 - safeBot - (ph + 18) / h, safeTop + 0.16, 0.7)
+        const bandBottom = clamp((dockBot - ph - 18) / h, bandTop + 0.16, 0.7)
         fit(A, aspect, fov, subCx, 1.7, subHw + 0.5, 1.6, 0.04, 0.96, 0.12, 0.9, 0.35)
         fit(W, aspect, fov, subCx, 1.62, subHw, 0.9, 0.04, 0.96, 0.2, 0.75, 0.1)
-        fit(L, aspect, fov, 0, 1.64, 0.62, 0.44, 0.06, 0.94, safeTop + 0.01, bandBottom, -0.1)
-        fit(L2, aspect, fov, 0, 1.64, 0.6, 0.42, 0.06, 0.94, safeTop + 0.01, bandBottom, -0.12)
-        fit(F, aspect, fov, 0, 1.5, 0.85, 0.7, 0.06, 0.94, 0.14, 0.7, -0.05)
+        fit(L, aspect, fov, subCx, subCy, subHw, subHh, 0.04, 0.96, bandTop + 0.01, bandBottom, -0.1)
+        fit(L2, aspect, fov, subCx, subCy, subHw * 0.98, subHh, 0.04, 0.96, bandTop + 0.01, bandBottom, -0.12)
+        fit(F, aspect, fov, subCx, subCy, subHw, subHh, 0.04, 0.96, bandTop + 0.03, endTop, -0.05)
         if (local < 0.2) mix(OUT, A, W, ease.inOutCubic(segment(local, 0.02, 0.12)))
         else if (local < 0.85) {
           mix(S1, L, L2, segment(local, 0.3, 0.85))
           mix(OUT, W, S1, ease.inOutCubic(segment(local, 0.2, 0.29)))
         } else mix(OUT, L2, F, ease.inOutCubic(segment(local, 0.85, 0.985)))
       } else {
-        // landscape: establishing → door + "Say hello." right of the panel → square on the door
+        // landscape: establishing → door + "Say hello." right of the panel →
+        // the pair centred above the sign-off, the dark arrow held out of shot
         const fov = 38
         const gutter = Math.min(48, Math.max(16, 0.034 * w))
-        const panelR = (gutter + Math.min(520, 0.42 * w) + 20) / w
+        const panelR = ((m.dockR || gutter + Math.min(520, 0.42 * w)) + 20) / w
         fit(A, aspect, fov, subCx - 0.4, 1.65, subHw + 1.5, 1.45, 0.06, 0.94, 0.12, 0.88, 0.3, -0.3)
         fit(L, aspect, fov, subCx, 1.62, subHw, 0.95, panelR, 0.975, 0.16, 0.84, 0.05, -0.2)
         fit(L2, aspect, fov, subCx, 1.62, subHw * 0.97, 0.92, panelR, 0.975, 0.16, 0.84, 0.03, -0.15)
-        fit(F, aspect, fov, 0, 1.45, 1.0, 0.95, 0.15, 0.85, 0.08, 0.74, 0.1)
+        fit(F, aspect, fov, subCx, subCy, subHw + 0.1, subHh, 0.06, 0.94, bandTop + 0.03, endTop, 0.08)
+        // very wide screens: slide right rather than show a sliver of the arrow
+        const halfW = F.pos.z * Math.tan(THREE.MathUtils.degToRad(fov / 2)) * aspect
+        const clear = (shop ? shop.arrowTip : -1.46) + 0.12 - (F.tgt.x - halfW)
+        if (clear > 0) {
+          F.tgt.x += clear
+          F.pos.x += clear
+        }
         if (local < 0.28) mix(OUT, A, L, ease.inOutCubic(segment(local, 0.02, 0.28)))
         else if (local < 0.85) mix(OUT, L, L2, segment(local, 0.28, 0.85))
         else mix(OUT, L2, F, ease.inOutCubic(segment(local, 0.85, 0.985)))

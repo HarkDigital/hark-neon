@@ -65,21 +65,30 @@
   overflow: hidden;
   vertical-align: 0.02em;
 }
+/* the tag is a small black acrylic label: its own dark plate keeps the
+   11px caps at >= 4.5:1 over any frame (lit brick, grey haze, white tubes) */
 .wm-tag {
   display: block;
-  margin-top: 6px;
+  width: max-content;
+  margin: 5px 0 0 -6px;
+  padding: 3px 5px 3px 6px;
   font-family: var(--font-mono);
   font-weight: 450;
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   white-space: nowrap;
-  color: rgba(255, 246, 251, 0.86);
+  color: #fff6fb;
+  text-shadow: none;
+  background: rgba(5, 4, 8, 0.8);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 246, 251, 0.1);
 }
 .wm-tag b {
-  margin: 0 0.5em 0 0.26em;
+  margin: 0 0.36em 0 0.22em;
   font-weight: 400;
+  color: rgba(255, 246, 251, 0.78);
 }
 .wm-tag em {
   font-style: normal;
@@ -408,8 +417,10 @@
   white-space: pre;
   margin-right: -0.14em;
 }
+/* 24x24 targets with a little air between them (WCAG 2.5.8) */
 .ch-pips ol {
   display: flex;
+  gap: 3px;
   margin: 0 -4px 0 0;
   padding: 0;
   list-style: none;
@@ -555,7 +566,7 @@
 }
 .ch-ml-lab {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   text-align: right;
@@ -621,6 +632,21 @@
   .ch {
     --ch-bot: max(14px, calc(env(safe-area-inset-bottom, 0px) + 6px));
   }
+  /* phones: the readout stacks higher into the band, so the bottom scrim
+     holds its dark further up (>= 4.5:1 for the 11px caps over lit scenes) */
+  .ch-scrim--bot {
+    background: linear-gradient(
+      to top,
+      rgba(5, 4, 8, 0.8) 0%,
+      rgba(5, 4, 8, 0.72) 48%,
+      rgba(5, 4, 8, 0.5) 66%,
+      rgba(5, 4, 8, 0.18) 84%,
+      rgba(5, 4, 8, 0) 100%
+    );
+  }
+  .ch-read-line {
+    color: #fff6fb;
+  }
   .ch-mark-svg {
     width: 26px;
     height: 26px;
@@ -632,8 +658,7 @@
     font-size: 18px;
   }
   .wm-tag {
-    font-size: 9px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.12em;
   }
   /* the switch plate stacks; the readout reads in two lines */
   .ch-prefs {
@@ -660,19 +685,23 @@
     font-size: 17px;
   }
   .ch-read-b {
-    font-size: 10px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
   }
-  .ch-pip {
-    width: 22px;
-  }
+  /* the tube shrinks, never the 24x24 button */
   .ch-pip .ch-tube {
     width: 12px;
   }
   .ch-pip.is-on .ch-tube {
-    width: 16px;
+    width: 17px;
   }
   .ch-ml-name {
     font-size: 27px;
+  }
+  /* the kicker keeps to one line on a phone */
+  .ch-menu-k {
+    gap: 10px;
+    letter-spacing: 0.1em;
   }
 }
 @media (max-width: 380px) {
@@ -684,8 +713,7 @@
     width: 14px;
   }
   .ch-ml-lab {
-    font-size: 10px;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
   }
   .ch-read-l {
     font-size: 16px;
@@ -712,15 +740,140 @@
     padding-top: 12px;
   }
 }
-/* short landscape (phones on their side, "Continue anyway"): one bottom row */
-@media (max-height: 500px) and (min-width: 561px) {
+/* short landscape (a phone on its side after "Continue anyway", 200% zoom on
+   a laptop): the chrome bands are 52px (base.css --safe-top/--safe-bottom),
+   so the chrome goes compact — the brand reads in one line, the nav and the
+   switches slim down, the readout is one row beside its pips */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ch {
+    --ch-top: max(10px, calc(env(safe-area-inset-top, 0px) + 6px));
+    --ch-bot: max(9px, calc(env(safe-area-inset-bottom, 0px) + 6px));
+  }
+  .ch-scrim--top {
+    height: calc(var(--safe-top) + 10px);
+  }
+  .ch-scrim--bot {
+    height: calc(var(--safe-bottom) + 14px);
+  }
+  .ch-brand {
+    gap: 10px;
+  }
+  .ch-mark-svg {
+    width: 24px;
+    height: 24px;
+  }
+  .ch-brand-text {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .wm {
+    font-size: 18px;
+  }
+  .wm-tag {
+    margin: 1px 0 0;
+    letter-spacing: 0.12em;
+  }
+  .ch-nav {
+    top: calc(var(--ch-top) - 4px);
+    gap: 22px;
+  }
+  .ch-links {
+    gap: 20px;
+  }
+  .ch-link {
+    gap: 5px;
+    padding: 8px 2px 3px;
+  }
+  .ch-cta {
+    padding: 8px 15px;
+  }
+  .ch-menu-btn {
+    top: calc(var(--ch-top) - 3px);
+    min-height: 32px;
+  }
+  .ch-prefs {
+    flex-direction: row;
+  }
+  .ch-tgl,
+  .ch-bottom .ch-tgl {
+    min-height: 30px;
+    padding: 0 12px 0 11px;
+  }
+  .ch-bottom .ch-tgl-st {
+    margin-left: 0;
+  }
   .ch-read {
     grid-auto-flow: column;
     align-items: center;
     gap: 12px;
   }
+  .ch-read-line {
+    flex-wrap: nowrap;
+  }
+  .ch-read-n {
+    flex-basis: auto;
+    margin-bottom: 0;
+  }
+  .ch-read-sep {
+    display: inline;
+  }
   .ch-read-l {
-    font-size: 17px;
+    font-size: 16px;
+  }
+  /* the menu: the chapters on the left, email + switches on the right */
+  .ch-menu-top {
+    min-height: 38px;
+  }
+  .ch-menu-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    column-gap: clamp(24px, 5vw, 48px);
+    align-content: center;
+    max-width: 780px;
+    padding: 12px 0 4px;
+  }
+  .ch-menu-k {
+    grid-column: 1 / -1;
+    margin-bottom: 10px;
+  }
+  .ch-menu-nav {
+    grid-column: 1;
+    grid-row: 2 / span 2;
+  }
+  .ch-menu-foot {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    margin-top: 0;
+    padding-top: 12px;
+  }
+  .ch-menu-prefs {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: start;
+  }
+  .ch-ml {
+    min-height: 40px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  .ch-ml-name {
+    font-size: 22px;
+  }
+}
+/* narrow short landscape (a 200%-zoomed laptop, small phones on their side):
+   the counter hands its place to the pips (it stays in the spoken line) */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 760px) {
+  .ch-read-n,
+  .ch-read-sep {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -730,12 +883,18 @@
   inset: 0;
   display: grid;
   place-items: center;
+  color: var(--paper);
+}
+/* the black is its own layer: it lifts off the shop while the sign glides onto the hero's mark */
+.ld-bg {
+  position: absolute;
+  inset: 0;
   background:
     radial-gradient(42% 40% at 50% 44%, rgba(255, 46, 151, 0.06), rgba(255, 46, 151, 0) 72%),
     #050408;
-  color: var(--paper);
 }
 .ld-stage {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: 26px;
@@ -922,9 +1081,9 @@ html.motion-off .rot-phone-g {
   gap: 10px;
   margin: 0 0 10px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 450;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgba(255, 246, 251, 0.82);
 }
@@ -961,19 +1120,26 @@ html.motion-off .rot-phone-g {
 }
 
 /* ---------------- fallback: the shop's menu board (src/ui/fallback.ts) ---------------- */
-html.no-webgl,
-html.no-webgl body {
+html.no-webgl {
   background: #050408;
 }
-.fb {
+html.no-webgl body {
+  background:
+    radial-gradient(70% 380px at 50% 0%, rgba(255, 46, 151, 0.1), rgba(255, 46, 151, 0) 72%) no-repeat,
+    #050408;
+}
+/* header (banner), the boards in <main>, footer (contentinfo): one centred column */
+.fb-band {
+  box-sizing: border-box;
   max-width: 880px;
-  margin: 0 auto;
-  padding: max(24px, env(safe-area-inset-top, 0px)) var(--gutter) max(64px, env(safe-area-inset-bottom, 0px));
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
   color: var(--paper);
   font-family: var(--font-sans);
-  background: radial-gradient(70% 380px at 50% 0%, rgba(255, 46, 151, 0.1), rgba(255, 46, 151, 0) 72%);
 }
-.fb :focus-visible {
+.fb-band :focus-visible {
   outline: 2px solid #fff;
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgba(255, 46, 151, 0.45);
@@ -987,9 +1153,18 @@ html.no-webgl body {
   align-items: center;
   justify-content: space-between;
   gap: 18px 28px;
-  padding-bottom: 22px;
-  margin-bottom: 44px;
-  border-bottom: 1px solid rgba(255, 246, 251, 0.12);
+  padding-top: max(24px, env(safe-area-inset-top, 0px));
+}
+/* the rule under the header, inside the column's gutters */
+.fb-top::after {
+  content: '';
+  flex: 1 0 100%;
+  height: 1px;
+  margin-top: 4px;
+  background: rgba(255, 246, 251, 0.12);
+}
+.fb {
+  padding-top: 44px;
 }
 .fb-brand {
   display: flex;
@@ -1295,7 +1470,8 @@ html.no-webgl body {
   text-shadow: var(--glow-blue);
 }
 .fb-foot {
-  margin-top: 48px;
+  padding-top: 14px;
+  padding-bottom: max(64px, env(safe-area-inset-bottom, 0px));
   text-align: center;
 }
 .fb-open {
@@ -1327,8 +1503,8 @@ html.no-webgl body {
   color: rgba(255, 246, 251, 0.74);
 }
 @media (max-width: 560px) {
-  .fb-top {
-    margin-bottom: 32px;
+  .fb {
+    padding-top: 32px;
   }
   .fallback-copy {
     font-size: 16px;

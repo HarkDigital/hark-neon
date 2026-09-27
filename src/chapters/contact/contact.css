@@ -1,7 +1,8 @@
-/* CONTACT · "Open Late" — the copy panel beside the lit door, and the sign-off.
+/* CONTACT · "The Front Door" — the copy panel beside the lit door, and the sign-off.
    Landscape: the panel docks left, vertically centred between the chrome bands.
-   Portrait: the panel sits in the bottom band (the OPEN sign is framed above);
-   narrow phones (.is-split) step it in two beats in one cell. */
+   Portrait: the panel sits in the bottom band (the door + "Say hello." are
+   framed above); narrow phones and short landscape (.is-split, set by the
+   chapter from the same queries) step it in two beats in one cell. */
 
 .ct {
   position: absolute;
@@ -16,15 +17,21 @@
   bottom: var(--safe-bottom);
   width: min(520px, 42vw);
   display: flex;
+  /* a panel taller than the band keeps its top (the headline) on screen */
   align-items: center;
+  align-items: safe center;
 }
 
-.ct-panel {
+/* smoked acrylic without the blur: a 520x600 backdrop-filter over the
+   animating canvas dropped frames when the GPU was shared (review perf-05) */
+.ct .ct-panel {
   width: 100%;
   display: grid;
   gap: 18px;
   padding: 26px 28px 24px;
-  background: rgba(7, 5, 11, 0.8);
+  background: rgba(8, 6, 12, 0.92);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .ct-part {
   display: grid;
@@ -180,7 +187,7 @@
 
 /* short landscape screens: tighten the rhythm, never clip */
 @media (max-height: 800px) and (orientation: landscape) {
-  .ct-panel {
+  .ct .ct-panel {
     gap: 14px;
     padding: 20px 24px 20px;
   }
@@ -207,9 +214,59 @@
   }
 }
 
+/* short-ish laptops (1366x657, 1280x600): the panel must clear the wordmark
+   and the switches with room to spare */
+@media (max-height: 680px) and (orientation: landscape) {
+  .ct-dock {
+    top: calc(var(--safe-top) + 6px);
+    bottom: calc(var(--safe-bottom) + 4px);
+  }
+  .ct .ct-panel {
+    gap: 11px;
+    padding: 16px 22px 16px;
+  }
+  .ct-part {
+    gap: 9px;
+  }
+  /* the email and Copy share a row when they fit (they wrap when they don't) */
+  .ct .ct-a {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 14px;
+  }
+  .ct .ct-a > .hud-eyebrow,
+  .ct .ct-a > .ct-title,
+  .ct .ct-a > .ct-body {
+    flex: 1 1 100%;
+  }
+  .ct-title {
+    font-size: clamp(2rem, 3.2vw, 2.8rem);
+  }
+  .ct-body {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .ct-email {
+    font-size: clamp(1.45rem, 2.1vw, 1.9rem);
+    padding: 2px 0 6px;
+  }
+  .ct-others,
+  .ct-foot {
+    padding-top: 9px;
+  }
+  .ct-others {
+    gap: 8px;
+  }
+  .ct-chip {
+    min-height: 26px;
+  }
+}
+
 /* ---------------------------------------------------------- portrait */
 .ct.is-portrait .ct-dock {
   right: var(--gutter);
+  bottom: calc(var(--safe-bottom) + 8px);
   width: auto;
   align-items: flex-end;
   justify-content: center;
@@ -245,4 +302,105 @@
 }
 .ct.is-split .ct-chip {
   min-height: 32px;
+}
+
+/* ---------------------------------------------------------- short landscape
+   Phones sideways after "Continue anyway" (844x390) and 200% zoom on a laptop
+   (720x450): the band between the chrome is only ~270-330px, so the panel
+   steps in two beats (.is-split) — the email card, then the other concepts —
+   in compact type, and the sign-off sits on one row. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ct-dock {
+    top: calc(var(--safe-top) + 10px);
+    bottom: calc(var(--safe-bottom) + 8px);
+    width: min(440px, 48vw);
+  }
+  .ct .ct-panel,
+  .ct.is-split .ct-panel {
+    gap: 8px;
+    padding: 14px 18px 14px;
+    /* the floor: never spill past the chrome (a scroll only at extreme zoom) */
+    max-height: 100%;
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+  }
+  .ct .ct-panel::before {
+    top: 0;
+  }
+  .ct.is-split .ct-part {
+    gap: 8px;
+  }
+  .ct.is-split .ct-a {
+    column-gap: 14px;
+  }
+  .ct-a .hud-eyebrow {
+    font-size: 10.5px;
+  }
+  .ct.is-split .ct-title {
+    font-size: clamp(1.7rem, 4.4vw, 2.1rem);
+  }
+  .ct.is-split .ct-body {
+    font-size: 13px;
+    line-height: 1.42;
+  }
+  .ct.is-split .ct-email {
+    font-size: clamp(1.3rem, 3.2vw, 1.55rem);
+    padding: 2px 0 6px;
+  }
+  .ct-others {
+    gap: 7px;
+  }
+  .ct-list {
+    gap: 5px;
+  }
+  .ct.is-split .ct-chip {
+    min-height: 26px;
+    padding: 0 9px;
+    font-size: 10.5px;
+  }
+  .ct-foot {
+    padding-top: 8px;
+    gap: 6px 14px;
+  }
+  .ct-legal {
+    font-size: 10px;
+    line-height: 1.45;
+  }
+  .ct-foot .ct-legal {
+    flex-basis: 150px;
+  }
+
+  /* the sign-off: Back to top and the footer on one row above the switches */
+  .ct-end {
+    bottom: calc(var(--safe-bottom) + 8px);
+    flex-flow: row wrap;
+    justify-content: center;
+    gap: 8px 14px;
+  }
+}
+
+/* smaller phones sideways (667x375) and 200% zoom on small laptops (640x400,
+   640x360): the concepts beat keeps its chips and leaves Back to top and the
+   footer to the sign-off at the end of the chapter; the shortest drop the body
+   line too (the accessible copy keeps both) */
+@media (orientation: landscape) and (max-height: 420px) and (max-width: 780px) {
+  .ct.is-split .ct-panel {
+    padding: 12px 16px 12px;
+  }
+  .ct.is-split .ct-foot {
+    display: none;
+  }
+  .ct.is-split .ct-chip {
+    min-height: 24px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+  .ct-list {
+    gap: 4px;
+  }
+}
+@media (orientation: landscape) and (max-height: 370px) {
+  .ct.is-split .ct-body {
+    display: none;
+  }
 }

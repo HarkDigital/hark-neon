@@ -7,7 +7,7 @@ import { nextFrame } from '../../core/yield'
 import { neonFromStrokes, neonSpill, neonText, textStrokes, Striker, TUBE, type NeonPart } from '../../kit/neon'
 import { backerPanel, brickMaterial, concreteMaterial, fluorescentFixture, initAreaLights } from '../../kit/shop'
 import type { Stroke } from '../../kit/type'
-import { breakerPanel, cable, circleStroke, conduit, monoReady, monoText, panelPaint, plate, roundedPolygon, Sparks, straps, transformer } from './props'
+import { breakerPanel, cable, circleStroke, conduit, glowPlane, monoReady, monoText, panelPaint, plate, roundedPolygon, Sparks, straps, transformer } from './props'
 import '../chapter.css'
 import './shield.css'
 
@@ -18,7 +18,11 @@ import './shield.css'
  *              its letters knocked crooked, the K hanging off its supports)
  *              sputters — dropouts re-strike through Strikers (the site flash
  *              budget), slow level wobble, sparks off the transformer's HV
- *              boot, short small post glitch bursts. Calm modes: steady, dim K.
+ *              boot, short small post glitch bursts. At most MAX_FAULTS per
+ *              visit to the breach, then it rests broken and steady (dim K).
+ *              Calm modes: steady from the start.
+ *   0.25–0.34  brownout: the sign sags as the camera turns to the breaker
+ *              (keeps the pan from sweeping full-bright tubes across the frame)
  *   0.35–0.40  the breaker resets: the lever snaps up (a time-based spring),
  *              the red circuit dies as it passes centre, the pilot goes blue
  *   0.39–0.62  breathe (landing 0.45): "breathe." writes itself in argon blue
@@ -29,8 +33,13 @@ import './shield.css'
  *              from SECURITY.body) strike on the status plate and hold
  *
  * Flash safety: every on/off goes through a Striker; the fault clock drops
- * at most one tube every ~1.5 s (plus its budgeted stutter); sparks and the
- * glitch ride the same events; nothing flashes > 3/s; no full-frame flashes.
+ * at most one tube every ~1.5 s (plus its budgeted stutter), four times per
+ * visit; sparks and the glitch ride the same events; strikes ramp without a
+ * stutter on a brisk scroll; nothing flashes > 3/s; no full-frame flashes.
+ *
+ * Lights: 3 RectAreaLights on desktop (the board halo, the 24/7 halo, the
+ * work light), 2 on phones (the 24/7 halo becomes a wider spill). The floor
+ * pool and the spark glow are additive planes (props.glowPlane).
  */
 
 // ------------------------------------------------------------------ layout (world, wall face at z = 0)
@@ -50,23 +59,33 @@ const RUN_Y = 2.78
 const RUN_Z = 0.05
 
 // timeline (local)
+const BROWN_AT = 0.25 // the tripped sign starts to sag (the camera turns to the breaker)
 const LEVER_AT = 0.352 // the breaker is thrown
 const BLUE_AT = 0.382 // argon strikes (and writes itself until DRAW_END)
 const DRAW_END = 0.435
 const SEVEN_AT = 0.415
 const WATCH_AT = [0.6, 0.635, 0.67]
 
-// fault clock (breach idle): one dropout per period
-const FAULT_P = 1.9
+// fault clock (breach idle): dropouts at these seconds of REST in the breach
+// (the clock runs only while the visitor lingers; reset each visit); after
+// MAX_FAULTS the sign rests broken and steady. Irregular, like a real short;
+// ≥ 1.55 s apart so one fault — dropout + one budgeted stutter + a short
+// glitch — never shares a rolling second with the next.
+const FAULTS = [0.25, 2.6, 4.45, 6.55]
+const MAX_FAULTS = FAULTS.length
 const DROP = 0.14
+// strikes ramp (no stutter) above this scroll speed (vh/s): a brisk scroll
+// through the reset would stack the argon strike, the 24/7 and the camera pan
+const STRIKE_CALM_V = 1.2
+// the fault clock only runs while the visitor rests in the breach (a pause or
+// a slow drift): a fault on top of a moving camera stacks flashes
+const FAULT_V = 0.6
 
-function hash(n: number) {
-  const x = Math.sin(n * 91.7 + 17.3) * 43758.5453
-  return x - Math.floor(x)
-}
-// jitter ≤ 0.35 s keeps faults ≥ 1.55 s apart: one fault (dropout + one budgeted
-// stutter + a short glitch) never shares a rolling second with the next
-const faultAt = (k: number) => k * FAULT_P + hash(k) * 0.35
+const faultAt = (k: number) => FAULTS[k]
+/** when the last fault's echo has died away (s of rest in the breach) */
+const FAULTS_DONE = faultAt(MAX_FAULTS - 1) + 0.9
+/** steady broken state (level multipliers): triangle, word, the hanging K */
+const REST = [0.92, 0.9, 0.62]
 
 // ------------------------------------------------------------------ camera shots
 
@@ -214,11 +233,15 @@ export default function create(): Chapter {
   const sparkOrigin = new THREE.Vector3()
   let fixture!: ReturnType<typeof fluorescentFixture>
   let halo!: THREE.RectAreaLight
-  let floorLight!: THREE.RectAreaLight
-  let sevenLight!: THREE.RectAreaLight
-  let sparkLight!: THREE.RectAreaLight
+  // desktop only (phones: a wider spill carries the 24/7's light on the brick)
+  let sevenLight: THREE.RectAreaLight | null = null
   let workLight!: THREE.RectAreaLight
+  let floorPool!: ReturnType<typeof glowPlane>
+  let sparkGlow!: ReturnType<typeof glowPlane>
+  const cSpark = new THREE.Color('#ffb070')
   const lever = new Spring()
+  /** seconds spent resting in the breach this visit (the fault clock) */
+  let breachRest = 0
   let roomLevel = 0.8
   let settled = true
   let sparksLive = false
@@ -311,8 +334,8 @@ export default function create(): Chapter {
         const [r, dx, dy] = crooked[i]
         return offset(bend(s, r, dx, dy), 0.42, 0.43, TZ)
       })
-      const pWord = neonFromStrokes(letters.filter((_, i) => i !== 3).flat(), { color: 'red', radius: HS / 28, hdr: 4.2, radial })
-      const pK = neonFromStrokes(letters[3], { color: 'red', radius: HS / 28, hdr: 4.2, radial })
+      const pWord = neonFromStrokes(letters.filter((_, i) => i !== 3).flat(), { color: 'red', radius: HS / 28, hdr: 4.2, radial, caps: false })
+      const pK = neonFromStrokes(letters[3], { color: 'red', radius: HS / 28, hdr: 4.2, radial, caps: false })
       board.add(pWord.group, pK.group)
       const redStrokes = [...triStrokes, ...letters.flat()]
       redSpill = neonSpill(redStrokes, { color: 'red', width: BOARD_W, height: 1.1, cx: 0, cy: 0.43, blur: 0.075, strength: 0.55 })
@@ -331,22 +354,38 @@ export default function create(): Chapter {
       blue = { part: b.part, s: new Striker({ stutters: 1 }), level: 0 }
       await nextFrame()
 
-      // ---------------- 24/7 — argon, bent straight onto the brick
-      const sv = neonText('24/7', { font: 'display', size: 0.5, tracking: 0.3 }, { color: 'blue', hdr: 4, radius: 0.5 / 28, radial })
+      // ---------------- 24/7 — argon, bent straight onto the brick. EMS
+      // Readability (sans): Osmotron's 7 is a flat-top hook that reads "24/ㄱ"
+      const SV = 0.58
+      const sv = neonText('24/7', { font: 'sans', size: SV, tracking: 0.22 }, { color: 'blue', hdr: 4, radius: SV / 28, radial, caps: false })
       sv.part.group.position.copy(SEVEN)
       group.add(sv.part.group)
-      const svSpill = neonSpill(sv.text.strokes, { color: 'blue', width: sv.text.width + 1.4, height: 1.4, blur: 0.09, strength: 0.5 })
+      // phones have no area light on it: a wider, stronger spill carries its light on the brick
+      const svSpill = ctx.mobile
+        ? neonSpill(sv.text.strokes, { color: 'blue', width: sv.text.width + 2.6, height: 2.2, blur: 0.2, strength: 0.8 })
+        : neonSpill(sv.text.strokes, { color: 'blue', width: sv.text.width + 1.4, height: 1.4, blur: 0.09, strength: 0.5 })
       svSpill.position.set(SEVEN.x, SEVEN.y, 0.004)
       group.add(svSpill)
       sv.part.follow(svSpill)
-      seven = { part: sv.part, s: new Striker({ stutters: 1 }), level: 0 }
+      // no stutter: it strikes a beat after the argon, in the same corner of the frame
+      seven = { part: sv.part, s: new Striker({ stutters: 0, ramp: 0.3 }), level: 0 }
       // glass supports (little posts to the brick)
       const post = new THREE.CylinderGeometry(0.008, 0.008, SEVEN.z, 6)
       post.rotateX(Math.PI / 2)
       const posts = new THREE.InstancedMesh(post, new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.2, metalness: 0.2, transparent: true, opacity: 0.6 }), 4)
       const pm = new THREE.Matrix4()
-      ;[-0.7, -0.15, 0.4, 0.95].forEach((x, i) => posts.setMatrixAt(i, pm.makeTranslation(SEVEN.x + x - 0.25, SEVEN.y - 0.2, SEVEN.z / 2)))
+      // each post under a bend of the glass near the baseline
+      const svPts = sv.text.strokes.flatMap(s => s.pts)
+      const want = new THREE.Vector3()
+      ;[-0.4, -0.13, 0.13, 0.4].forEach((f, i) => {
+        want.set(f * sv.text.width, -SV * 0.3, 0)
+        const p = svPts.reduce((a, b) => (b.distanceToSquared(want) < a.distanceToSquared(want) ? b : a))
+        posts.setMatrixAt(i, pm.makeTranslation(SEVEN.x + p.x, SEVEN.y + p.y, SEVEN.z / 2))
+      })
       group.add(posts)
+      // the tube's two electrode ends (the GTO from T2 runs to them)
+      const svStrokes = sv.text.strokes
+      const svEnds = [svStrokes[0].pts[0], svStrokes[svStrokes.length - 1].pts[svStrokes[svStrokes.length - 1].pts.length - 1]]
 
       // ---------------- the breaker
       breaker = breakerPanel()
@@ -380,6 +419,7 @@ export default function create(): Chapter {
           hdr: 3.2,
           smooth: false,
           radial,
+          caps: false,
         })
         statusG.add(p.group)
         const sp = neonSpill([{ pts: [new THREE.Vector3(-0.5, y, 0), new THREE.Vector3(-0.2, y, 0)] }], {
@@ -446,30 +486,35 @@ export default function create(): Chapter {
       }
       for (const [i, bt] of t2.boots.entries()) {
         const p = bt.clone().add(T2)
-        const end = new THREE.Vector3(SEVEN.x + (i ? 1.08 : -1.05), SEVEN.y + (i ? -0.24 : 0.24), 0.03)
+        const end = new THREE.Vector3(SEVEN.x + svEnds[i].x, SEVEN.y + svEnds[i].y, 0.03)
         group.add(cable([p, p.clone().add(new THREE.Vector3(0, -0.12, 0.03)), new THREE.Vector3((p.x + end.x) / 2, Math.min(p.y, end.y) - 0.18 - i * 0.1, 0.08), end]))
       }
 
       sparks = new Sparks(16, 3)
       group.add(sparks.mesh)
 
-      // ---------------- lights (count fixed: 6 RectAreaLights incl. the fixture)
+      // ---------------- lights: 3 RectAreaLights on desktop, 2 on phones (count
+      // fixed at init; intensity only at runtime). The floor pool and the
+      // spark glow are additive planes.
       halo = new THREE.RectAreaLight(cRed, 0, BOARD_W - 0.2, BOARD_H - 0.2)
       halo.position.set(BOARD.x, BOARD.y, 0.035)
       halo.lookAt(BOARD.x, BOARD.y, -2)
       group.add(halo)
-      floorLight = new THREE.RectAreaLight(cRed, 0, BOARD_W - 0.4, 0.3)
-      floorLight.position.set(BOARD.x, BOARD.y - BOARD_H / 2 - 0.1, 0.5)
-      floorLight.lookAt(BOARD.x, -3.2, 1.6)
-      group.add(floorLight)
-      sevenLight = new THREE.RectAreaLight(cBlue, 0, 2.2, 0.8)
-      sevenLight.position.set(SEVEN.x, SEVEN.y, 0.32)
-      sevenLight.lookAt(SEVEN.x, SEVEN.y, -2)
-      group.add(sevenLight)
-      sparkLight = new THREE.RectAreaLight(new THREE.Color('#ffb070'), 0, 0.5, 0.5)
-      sparkLight.position.set(sparkOrigin.x, sparkOrigin.y - 0.1, 0.4)
-      sparkLight.lookAt(sparkOrigin.x, sparkOrigin.y - 0.1, -2)
-      group.add(sparkLight)
+      if (!ctx.mobile) {
+        sevenLight = new THREE.RectAreaLight(cBlue, 0, 2.2, 0.8)
+        sevenLight.position.set(SEVEN.x, SEVEN.y, 0.32)
+        sevenLight.lookAt(SEVEN.x, SEVEN.y, -2)
+        group.add(sevenLight)
+      }
+      // the sign's light pooled on the sealed floor in front of the board
+      floorPool = glowPlane(BOARD_W + 1.2, 3.4, 'pool')
+      floorPool.rotation.x = -Math.PI / 2
+      floorPool.position.set(BOARD.x, FLOOR_Y + 0.004, 1.7)
+      group.add(floorPool)
+      // the arc's flare on the brick around the transformer boot
+      sparkGlow = glowPlane(1.3, 1.3)
+      sparkGlow.position.set(sparkOrigin.x, sparkOrigin.y - 0.1, 0.012)
+      group.add(sparkGlow)
       // the utility corner's work light: key on the breaker column from the
       // right and in front (the bare fluorescent above it is the visible source)
       workLight = new THREE.RectAreaLight(new THREE.Color('#e6eeff'), 0, 1.6, 1.0)
@@ -526,20 +571,32 @@ export default function create(): Chapter {
       const tripped = lv < 0.5
       breaker.setPilot(tripped ? TUBE.red : TUBE.blue, tripped ? 3.2 : 2.6)
 
-      // ---------------- the breach: fault clock (idle, time-based)
-      const faulting = tripped && local > 0.05 && local < LEVER_AT && !calm
-      let k = Math.floor(t / FAULT_P)
-      if (faultAt(k) > t) k--
-      const age = t - faultAt(k)
-      const victim = [2, 0, 2, 1][((k % 4) + 4) % 4]
+      // ---------------- the breach: fault clock (idle, time-based). It runs
+      // only while the visitor rests in the breach, from the start of this
+      // visit; after MAX_FAULTS the sign rests broken and steady (a11y: no
+      // endless blink at rest).
+      const inBreach = tripped && local > 0.05 && local < LEVER_AT
+      const faulting = inBreach && !calm && Math.abs(frame.velocity) < FAULT_V
+      if (!inBreach) breachRest = 0
+      else if (faulting) breachRest += dt
+      const tb = breachRest
+      let k = -1
+      while (k + 1 < MAX_FAULTS && faultAt(k + 1) <= tb) k++
+      const age = k >= 0 ? tb - faultAt(k) : Infinity
+      const victim = [2, 0, 2, 1][Math.max(0, k) % 4]
       const dropping = faulting && age < DROP
+      // 0 → 1 as the last fault's echo dies: the wobble and the room sway settle
+      const rest = quiet ? 1 : inBreach ? smoothstep(FAULTS_DONE, FAULTS_DONE + 2.5, tb) : 0
       const base = [1, 0.94, 0.62]
+      // brownout (scroll-driven): the tripped circuit sags as the camera turns
+      // to the breaker, so the pan sweeps dim tubes, not full-bright ones
+      const sag = 1 - 0.6 * smoothstep(BROWN_AT, BROWN_AT + 0.06, local)
       let redMean = 0
       red.forEach((r, i) => {
         const want = tripped && !(dropping && victim === i)
         const lvl = r.s.update(want ? base[i] : 0, dt, calm)
-        const wob = quiet ? (i === 2 ? 0.7 : 1) : 0.84 + 0.1 * Math.sin(t * (1.3 + i * 0.37) + i * 2.1) + 0.06 * Math.sin(t * 0.61 + i)
-        r.level = lvl * wob
+        const live = 0.84 + 0.1 * Math.sin(t * (1.3 + i * 0.37) + i * 2.1) + 0.06 * Math.sin(t * 0.61 + i)
+        r.level = lvl * lerp(live, REST[i], rest) * sag
         r.part.setLevel(r.level)
         redMean += r.level / 3
         if (Math.abs(lvl - (want ? base[i] : 0)) > 0.01) busy = true
@@ -548,26 +605,30 @@ export default function create(): Chapter {
 
       // sparks + glitch ride the same events
       bursts.length = 0
-      if (faulting) {
+      if (faulting && k >= 0 && tb < FAULTS_DONE + 0.2) {
         // a two-part crackle per fault: the arc, then a smaller echo
         for (const kk of [k, k - 1]) {
-          const a = t - faultAt(kk)
+          if (kk < 0) continue
+          const a = tb - faultAt(kk)
           if (a >= 0 && a < 0.7) bursts.push([a, kk * 2])
           if (a >= 0.2 && a < 0.9 && bursts.length < 3) bursts.push([a - 0.2, kk * 2 + 1])
         }
         const glow = sparks.update(sparkOrigin, bursts)
         sparksLive = true
-        sparkLight.intensity = glow * 11
-        if (age < 0.09) ctx.post.params.glitch = 0.24
+        sparkGlow.setLight(cSpark, glow * 0.55)
+        if (age < 0.09) ctx.post.params.glitch = 0.16
       } else {
         if (sparksLive) sparks.clear()
         sparksLive = false
-        sparkLight.intensity = 0
+        sparkGlow.setLight(cSpark, 0)
       }
+
+      // a brisk scroll through the reset ramps the strikes (no stutter)
+      const strikeCalm = calm || Math.abs(frame.velocity) > STRIKE_CALM_V
 
       // ---------------- breathe: argon strikes, writes itself, then breathes
       const blueOn = !tripped && local >= BLUE_AT
-      const bl = blue.s.update(blueOn, dt, calm)
+      const bl = blue.s.update(blueOn, dt, strikeCalm)
       if (Math.abs(bl - (blueOn ? 1 : 0)) > 0.01) busy = true
       const breath = quiet ? 1 : 0.875 + 0.125 * Math.sin(2 * Math.PI * 0.2 * t)
       blue.level = bl * breath
@@ -575,19 +636,19 @@ export default function create(): Chapter {
       blue.part.setDraw(quiet ? 1 : 0.06 + 0.94 * smoothstep(BLUE_AT, DRAW_END, local))
 
       const sevenOn = !tripped && local >= SEVEN_AT
-      seven.level = seven.s.update(sevenOn, dt, calm)
+      seven.level = seven.s.update(sevenOn, dt, strikeCalm)
       seven.part.setLevel(seven.level)
       if (Math.abs(seven.level - (sevenOn ? 1 : 0)) > 0.01) busy = true
 
       watch.forEach((w, i) => {
         const on = !tripped && local >= WATCH_AT[i]
-        w.level = w.s.update(on, dt, calm)
+        w.level = w.s.update(on, dt, strikeCalm)
         w.part.setLevel(w.level)
         if (Math.abs(w.level - (on ? 1 : 0)) > 0.01) busy = true
       })
 
       // ---------------- the room: a fluorescent that sags on the faults
-      const roomTarget = tripped ? (dropping ? 0.5 : 0.72 + (quiet ? 0 : 0.06 * Math.sin(t * 0.9))) : 1
+      const roomTarget = tripped ? (dropping ? 0.5 : 0.72 + 0.06 * (1 - rest) * Math.sin(t * 0.9)) : 1
       roomLevel += (roomTarget - roomLevel) * (1 - Math.exp(-dt / 0.09))
       fixture.setLevel(roomLevel)
       workLight.intensity = roomLevel * 7
@@ -596,10 +657,9 @@ export default function create(): Chapter {
       const share = blue.level / Math.max(1e-4, blue.level + redMean)
       cTmp.copy(cRed).lerp(cBlue, share)
       halo.color.copy(cTmp)
-      floorLight.color.copy(cTmp)
       halo.intensity = redMean * 22 + blue.level * 15
-      floorLight.intensity = redMean * 5 + blue.level * 4.5
-      sevenLight.intensity = seven.level * 7
+      floorPool.setLight(cTmp, redMean * 0.26 + blue.level * 0.2)
+      if (sevenLight) sevenLight.intensity = seven.level * 7
 
       // ---------------- world + post
       const s = smoothstep(0.35, 0.42, local)
@@ -630,9 +690,14 @@ export default function create(): Chapter {
       return !settled
     },
 
+    onEnter() {
+      breachRest = 0
+    },
+
     onLeave() {
       sparks?.clear()
       sparksLive = false
+      breachRest = 0
     },
 
     camera(local, frame, out) {

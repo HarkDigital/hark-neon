@@ -15,7 +15,7 @@ import { storeKey } from './prefs'
  *            Gbmaj7 → Ab add9), detuned saw + triangle voices under a dark
  *            low-pass that opens and closes, long swells, a generated room
  *   per chapter (update): the mix shifts slowly (Short Circuit: the buzz
- *            rises and crackles, the pad thins; Open Late: the pad warms);
+ *            rises and crackles, the pad thins; The Front Door: the pad warms);
  *            a fast scroll makes the tubes buzz a little harder
  *   cut()    a ballast "tink" (an inharmonic metal ping + a relay tick) while
  *            the hum dips for the lights-out and comes back

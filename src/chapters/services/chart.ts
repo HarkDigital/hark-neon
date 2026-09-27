@@ -8,7 +8,7 @@ import { ICONS } from './icons'
 /*
  * SERVICES · the tube chart itself: eleven black acrylic sample tiles on
  * standoffs along a brick wall, one per service, each with its icon bent in
- * that tube colour, its number bent small in the display face, and a printed
+ * that tube colour, its number bent small in the plain sans, and a printed
  * colour label ("ROSE · 15MM · NE", decorative).
  *
  * Geometry is built once; the chapter drives levels.
@@ -226,13 +226,12 @@ export async function buildChart(parent: THREE.Group, mobile: boolean) {
     group.add(spill)
     icon.follow(spill)
 
-    // the number, bent small in the display face (top-left of the tile)
-    // (Osmotron slashes its zero, which reads as "Ø1": the slash is the
-    // digits' only two-point stroke, so it's dropped)
+    // the number, bent small in the plain sans (top-left of the tile).
+    // Not the display face: Osmotron's 5 reads as S and its squared zero as
+    // a letter O ("OS", "O1"); EMS Readability's figures read as figures.
     const numStr = String(i + 1).padStart(2, '0')
-    const nt = textStrokes(numStr, { font: 'display', size: NUM_SIZE, align: 'center', tracking: 0.1 })
-    const numStrokes = nt.strokes.filter(s => s.pts.length > 2)
-    const num = neonFromStrokes(numStrokes, { color, radius: NUM_SIZE / 17, hdr: hdr * 0.85, radial: 6, depth: 0.05 })
+    const nt = textStrokes(numStr, { font: 'sans', size: NUM_SIZE, align: 'center', tracking: 0.12 })
+    const num = neonFromStrokes(nt.strokes, { color, radius: NUM_SIZE / 17, hdr: hdr * 0.85, radial: 6, depth: 0.05 })
     num.group.position.set(-TILE_W / 2 + 0.17 + nt.width / 2, TILE_H / 2 - 0.2 - NUM_SIZE / 2, TUBE_Z * 0.5)
     group.add(num.group)
 

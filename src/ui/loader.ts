@@ -9,12 +9,21 @@ import { calmUi } from './prefs'
  * then the light runs along the tube as the site loads (stroke dashes drawn
  * by progress: loop, loop, diamond). Under it the transformer hum, a faint
  * thin pink line that wavers while the load runs and steadies to a straight
- * glow as it lands. "Warming up · 045%" in Azeret Mono ("Open late" once lit).
+ * glow as it lands. "Warming up · 045%" in Azeret Mono ("Warmed up · 100%"
+ * once lit: decoration, never an opening-hours line).
  *
- * Exit: the sign STRIKES once (one short dip, then full brightness) and the
- * loader fades out quickly. One flicker at most, a small outline on black
- * (well under the WCAG 2.3.1 area threshold); none under reduced motion /
- * Motion off (a plain fade).
+ * Exit: the sign STRIKES once (one short dip, then full brightness), then
+ * the MATCH-CUT: the hero publishes where its own (unlit) mark sits on its
+ * landing frame (on <html>, CSS px: --hark-mark-x/-y = the centre of the
+ * mark's square SVG viewBox, --hark-mark-size = its side — the same viewBox
+ * this loader draws in); the loader's sign glides onto that spot and cools to the unlit
+ * glass level while the black lifts off the shop, then lets go over the
+ * hero's mark (the sign cools until you scroll and strike it). Without those
+ * properties (or when the story opens somewhere other than the hero's
+ * landing frame), or under reduced motion / Motion off, it never overlaps the
+ * page: the sign fades out first, then the black. One flicker at most, a
+ * small outline on black (well under the WCAG 2.3.1 area threshold); none
+ * when calm.
  *
  * The drawing never outruns time: it takes at least MIN_MS even on a warm
  * cache, so the sign always visibly draws itself.
@@ -32,13 +41,55 @@ const FILL_MAX_MS = 420
 /** lit, a beat before the strike */
 const HOLD_MS = 140
 const STRIKE_MS = 170
-const FADE_MS = 360
-const FADE_CALM_MS = 320
+/** the match-cut: the sign's glide onto the hero's mark, then its let-go */
+const FLIGHT_MS = 580
+const LETGO_MS = 200
+/** no match-cut: the sign goes first, then the black */
+const SIGN_OUT_MS = 200
+const FADE_MS = 340
 /** the hum line: a sine over this width (px in its viewBox) */
 const HUM_W = 240
 const HUM_PERIOD = 20
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, Math.max(0, ms)))
+
+/** WAAPI when it's there (it ignores the reduced-motion CSS that zeroes transitions; a fade is not motion) */
+function play(el: Element | null, frames: Keyframe[], opts: KeyframeAnimationOptions) {
+  if (!el) return
+  try {
+    el.animate(frames, { fill: 'forwards', ...opts })
+  } catch {
+    const last = frames[frames.length - 1]
+    if (el instanceof HTMLElement || el instanceof SVGElement)
+      for (const [k, v] of Object.entries(last)) if (k !== 'offset' && k !== 'easing') el.style.setProperty(k, String(v))
+  }
+}
+
+/**
+ * The hero's mark on screen, as the hero chapter publishes it: CSS custom
+ * properties on <html>, in px — --hark-mark-x/-y (the centre of the mark's
+ * square SVG viewBox) and --hark-mark-size (its side). Null when they're
+ * missing or off screen.
+ */
+function heroMark(): { cx: number; cy: number; size: number } | null {
+  try {
+    // the rect is the hero's landing frame: only when that's what's on screen
+    // (a deep link to #work, ?c=…, or a scroll during the load lands elsewhere)
+    const st = window.__hark?.engine?.state
+    const slot = st?.slots[st.index]
+    if (!st || !slot || slot.def.id !== 'hero' || st.local > 0.02) return null
+    const cs = getComputedStyle(document.documentElement)
+    const num = (k: string) => parseFloat(cs.getPropertyValue(k))
+    const cx = num('--hark-mark-x')
+    const cy = num('--hark-mark-y')
+    const size = num('--hark-mark-size')
+    if (![cx, cy, size].every(Number.isFinite) || size < 12) return null
+    if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight || size > Math.max(innerWidth, innerHeight)) return null
+    return { cx, cy, size }
+  } catch {
+    return null
+  }
+}
 
 /** a sine polyline, two widths long (so it can slide by one period seamlessly) */
 function humPath(amp: number) {
@@ -68,6 +119,7 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
     const paths = [...MARK_PATHS.loops, MARK_PATHS.diamond].filter(Boolean)
     root.innerHTML = `
       <div class="ld${calm ? ' is-calm' : ''}">
+        <div class="ld-bg" aria-hidden="true"></div>
         <p class="sr-only" role="status">Loading ${BRAND.name}, ${SITE.name} concept</p>
         <div class="ld-stage" aria-hidden="true">
           <div class="ld-sign">
@@ -83,7 +135,14 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
           <p class="ld-read"><span>Warming up</span><i>·</i><b><span data-pct>000</span>%</b></p>
         </div>
       </div>`
-    holdInert('loader', [document.getElementById('track'), document.getElementById('stages'), document.getElementById('chrome')])
+    // the whole page sleeps under the loader, the skip link too (it would take
+    // focus unseen, under the black)
+    holdInert('loader', [
+      document.querySelector<HTMLElement>('.skip-link'),
+      document.getElementById('track'),
+      document.getElementById('stages'),
+      document.getElementById('chrome'),
+    ])
 
     lit = [...root.querySelectorAll<SVGPathElement>('.ld-lit path')]
     humEl = root.querySelector<SVGPathElement>('.ld-hum-wave')
@@ -155,9 +214,9 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
         shown = 1
         paint(1)
         ld?.classList.add('is-lit')
-        // the sign is lit: the shop's open
+        // the sign is lit: warmed up (decoration, not a claim about the shop)
         const read = root.querySelector('.ld-read')
-        if (read) read.innerHTML = '<span>Open</span><i>·</i><b>late</b>'
+        if (read) read.innerHTML = '<span>Warmed up</span><i>·</i><b>100%</b>'
         await wait(HOLD_MS)
         const still = calmUi()
         // the strike: one short dip, then full brightness (calm: none)
@@ -178,17 +237,58 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
           ld?.classList.add('is-struck')
           await wait(STRIKE_MS)
         }
-        // the page wakes as the loader fades, so the first Tab lands in it
+        // the page wakes as the loader lifts, so the first Tab lands in it
         releaseInert('loader')
-        const ms = still ? FADE_CALM_MS : FADE_MS
-        // WAAPI, not a CSS transition: reduced-motion CSS zeroes transitions,
-        // and a fade is not motion
-        try {
-          root.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-in', fill: 'forwards' })
-        } catch {
-          root.style.opacity = '0'
+        const bg = root.querySelector('.ld-bg')
+        const extras = [...root.querySelectorAll('.ld-hum, .ld-read')]
+        const to = still ? null : heroMark()
+        const litG = root.querySelector<SVGGElement>('.ld-lit')
+        // the loader draws in the same viewBox the hero publishes: map box onto box
+        const from = root.querySelector('.ld-svg')?.getBoundingClientRect()
+        const sr = signal?.getBoundingClientRect()
+        if (to && signal && from && sr && from.width > 4 && from.height > 4) {
+          // the match-cut: the sign glides onto the hero's mark and cools to
+          // unlit glass while the black lifts; then it lets go over the real one
+          const fx = from.left + from.width / 2
+          const fy = from.top + from.height / 2
+          const k = to.size / from.width
+          signal.style.transformOrigin = `${(fx - sr.left).toFixed(1)}px ${(fy - sr.top).toFixed(1)}px`
+          for (const x of extras) play(x, [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'ease-out' })
+          play(
+            signal,
+            [
+              { transform: 'none', opacity: 1 },
+              { transform: `translate(${(to.cx - fx).toFixed(1)}px, ${(to.cy - fy).toFixed(1)}px) scale(${k.toFixed(4)})`, opacity: 0.8 },
+            ],
+            { duration: FLIGHT_MS, easing: 'cubic-bezier(0.55, 0, 0.25, 1)' },
+          )
+          // the glow cools with the glass (same three shadows, so they interpolate)
+          play(
+            signal,
+            [
+              { filter: getComputedStyle(signal).filter },
+              {
+                filter:
+                  'drop-shadow(0 0 2px rgba(255, 255, 255, 0.25)) drop-shadow(0 0 16px rgba(255, 225, 242, 0)) drop-shadow(0 0 34px rgba(255, 180, 220, 0))',
+              },
+            ],
+            { duration: FLIGHT_MS, easing: 'ease-in-out' },
+          )
+          play(litG, [{ opacity: 1 }, { opacity: 0.22 }], { duration: FLIGHT_MS - 100, delay: 100, easing: 'ease-in-out' })
+          // the black lifts late in the glide, once the sign is nearly home, so
+          // the two marks never show side by side
+          play(bg, [{ opacity: 1 }, { opacity: 0 }], { duration: FLIGHT_MS * 0.58, delay: FLIGHT_MS * 0.42, easing: 'cubic-bezier(0.45, 0, 0.7, 1)' })
+          await wait(FLIGHT_MS)
+          play(signal, [{ opacity: 0.8 }, { opacity: 0 }], { duration: LETGO_MS, easing: 'ease-out' })
+          await wait(LETGO_MS)
+        } else {
+          // no match-cut (or calm): the sign never overlaps the page — it goes
+          // first, then the black lifts
+          for (const x of [signal, ...extras]) play(x, [{ opacity: 1 }, { opacity: 0 }], { duration: SIGN_OUT_MS, easing: 'ease-out' })
+          await wait(SIGN_OUT_MS)
+          play(bg, [{ opacity: 1 }, { opacity: 0 }], { duration: FADE_MS, easing: 'ease-in' })
+          await wait(FADE_MS)
         }
-        await wait(ms)
       } catch {
         /* never hold the page hostage */
       } finally {

@@ -564,14 +564,6 @@ a {
     0 6px 20px rgba(0, 0, 0, 0.4);
   outline: none;
 }
-/* portrait phones: the chapters' copy owns the top and bottom bands */
-@media (max-width: 760px) and (orientation: portrait) {
-  .sr-copy :is(a, button):focus,
-  .sr-copy :is(h1, h2):focus {
-    top: 50%;
-    transform: translate(-50%, -50%);
-  }
-}
 .sr-copy :is(a, button):focus .sr-note {
   display: none;
 }
@@ -592,6 +584,14 @@ a {
   border: 2px solid var(--ink);
   border-radius: 4px;
   outline: none;
+}
+/* portrait phones: the chapters' copy owns the top and bottom bands */
+@media (max-width: 760px) and (orientation: portrait) {
+  .sr-copy :is(a, button):focus,
+  .sr-copy :is(h1, h2):focus {
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
 }
 .sr-copy [data-copy-status]:not(:empty) {
   position: fixed;
@@ -658,6 +658,13 @@ html.motion-off *::after {
 html.motion-off .rise .rise-w > span {
   transition-delay: 0s !important;
   animation-delay: 0s !important;
+}
+
+/* short portrait phones (375x667): a little more air above the switch plate */
+@media (orientation: portrait) and (max-height: 700px) {
+  :root {
+    --safe-bottom: calc(clamp(82px, 10.5vh, 110px) + 10px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* short landscape (phones sideways after "Continue anyway", 200% zoom on a

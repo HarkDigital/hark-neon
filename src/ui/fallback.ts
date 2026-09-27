@@ -17,7 +17,9 @@ import { releaseScene } from './prefs'
  * the window, the figures are lit numbers. The board numbers, leaders and
  * tubes are decorative (aria-hidden spans / CSS); the copy is the live
  * site's, verbatim, from srContent (buildChapterCopy). Links stay underlined.
- * No animation, no flicker: nothing here moves.
+ * No animation, no flicker: nothing here moves. Landmarks: the header
+ * (banner, with the Primary nav) and the footer (contentinfo) sit beside
+ * <main> (#track), which holds only the boards.
  */
 export function renderFallback(root: HTMLElement) {
   document.documentElement.classList.add('no-webgl')
@@ -36,26 +38,31 @@ export function renderFallback(root: HTMLElement) {
   root.inert = false
   root.removeAttribute('aria-hidden')
 
-  root.innerHTML = `
-    <div class="fb">
-      <header class="fb-top">
-        <a class="fb-brand" href="#hero" aria-label="${BRAND.name}, top of the page">
-          <span class="fb-mark" aria-hidden="true">${markSvg('fb-mark-svg')}</span>
-          <span class="fb-brand-text" aria-hidden="true">${WORDMARK}${CONCEPT_TAG}</span>
-        </a>
-        <nav class="fb-nav" aria-label="Primary">
-          <a href="#work">Work</a>
-          <a href="#services">Services</a>
-          <a href="#contact">Contact</a>
-          <a class="fb-cta" href="${CONTACT.href}">Start a project</a>
-        </nav>
-      </header>
-      <div class="fb-main" id="fb-main" tabindex="-1"></div>
-      <footer class="fb-foot">
-        <p class="fb-open" aria-hidden="true"><span>Open</span> <em>late</em></p>
-        <p class="fb-credit">${MICROCOPY.signalEyebrow}</p>
-      </footer>
-    </div>`
+  // landmarks: the header (banner) and footer (contentinfo) are <body>'s own
+  // children, around <main> (#track), which holds only the boards
+  document.querySelectorAll('body > .fb-top, body > .fb-foot').forEach(n => n.remove())
+  const header = document.createElement('header')
+  header.className = 'fb-top fb-band'
+  header.innerHTML = `
+    <a class="fb-brand" href="#hero" aria-label="${BRAND.name}, top of the page">
+      <span class="fb-mark" aria-hidden="true">${markSvg('fb-mark-svg')}</span>
+      <span class="fb-brand-text" aria-hidden="true">${WORDMARK}${CONCEPT_TAG}</span>
+    </a>
+    <nav class="fb-nav" aria-label="Primary">
+      <a href="#work">Work</a>
+      <a href="#services">Services</a>
+      <a href="#contact">Contact</a>
+      <a class="fb-cta" href="${CONTACT.href}">Start a project</a>
+    </nav>`
+  const footer = document.createElement('footer')
+  footer.className = 'fb-foot fb-band'
+  // the sign over the door is decoration (lights on in the shop), never a claim about hours
+  footer.innerHTML = `
+    <p class="fb-open" aria-hidden="true"><span>Lights</span> <em>on</em></p>
+    <p class="fb-credit">${MICROCOPY.signalEyebrow}</p>`
+  root.before(header)
+  root.after(footer)
+  root.innerHTML = `<div class="fb fb-band"><div class="fb-main" id="fb-main" tabindex="-1"></div></div>`
 
   // a fresh skip link: the live one's handler focuses a chapter heading that is gone
   const skip = document.querySelector<HTMLAnchorElement>('.skip-link')

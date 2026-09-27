@@ -13,15 +13,21 @@
   max-width: 7.4em;
 }
 
-/* the service card: smoked acrylic, its top tube lit in the active colour */
+/* the service card: smoked acrylic, its top tube lit in the active colour.
+   All eleven services sit stacked in ONE grid cell, so the card is always
+   as tall as the tallest (it never jumps) without any measuring; only the
+   shown one is visible. Opaque plate, no backdrop blur (GPU cost). */
 .sv-card {
   position: absolute;
   left: var(--gutter);
   bottom: var(--safe-bottom);
   width: min(440px, 38vw);
-  display: flex;
-  flex-direction: column;
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
+  display: grid;
   padding: 22px 24px 22px;
+  background: rgba(8, 6, 12, 0.86);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .sv-card::before {
   background: var(--sv-core, #ffd9ec);
@@ -30,18 +36,17 @@
     0 0 12px var(--sv-glow, rgba(255, 46, 151, 0.85)),
     0 0 32px var(--sv-glow-2, rgba(255, 46, 151, 0.4));
 }
-/* the card holds its tallest service's height: the index row heads it,
-   the service itself sits on the bottom edge */
+/* each service: the index row heads the card, the service itself sits on
+   the bottom edge */
 .sv-body {
-  flex: 1;
+  grid-area: 1 / 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 .sv-row {
   margin-bottom: auto;
-}
-.sv-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -124,5 +129,41 @@
   }
   .sv-tags .hud-tag {
     padding: 3px 8px;
+  }
+}
+
+/* short landscape (a phone sideways, 200% zoom): a compact card that fits
+   between the chrome bands — smaller type, tight spacing, small tags; the
+   intro plate hugs its words */
+@media (orientation: landscape) and (max-height: 500px) {
+  .sv-intro {
+    right: auto;
+    max-width: min(420px, calc(100vw - 2 * var(--gutter)));
+    gap: 8px;
+    padding: 12px 16px;
+  }
+  .sv-card {
+    width: min(400px, 47vw);
+    padding: 12px 16px 13px;
+    overflow: hidden;
+  }
+  .sv-body {
+    gap: 7px;
+  }
+  .sv-title {
+    font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+    line-height: 1.08;
+  }
+  .sv-blurb {
+    font-size: 13px;
+    line-height: 1.42;
+  }
+  .sv-tags {
+    gap: 4px;
+    margin-top: 0;
+  }
+  .sv-tags .hud-tag {
+    padding: 2px 8px;
+    font-size: 9.5px;
   }
 }

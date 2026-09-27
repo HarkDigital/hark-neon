@@ -5,10 +5,11 @@ import { PROCESS, SECTIONS, STATS } from '../../content'
 import { clamp, ease, lerp, segment, smoothstep, window01 } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { beat } from '../common'
-import { neonFromStrokes, neonSpill, Striker, textStrokes, type NeonPart } from '../../kit/neon'
+import { neonFromStrokes, neonSpill, Striker, textStrokes, TUBE, type NeonPart, type TubeColor } from '../../kit/neon'
 import type { Stroke } from '../../kit/type'
-import { brickMaterial, concreteMaterial, fluorescentFixture, initAreaLights, tubeLight } from '../../kit/shop'
-import { BendTube, circlePts, inkRibbon, paperTexture, patternPath, penMesh, ribbonFlames } from './bench'
+import { brickMaterial, concreteMaterial, fluorescentFixture, initAreaLights } from '../../kit/shop'
+import { StoryClock } from '../../kit/pace'
+import { BendTube, burnerGlow, circlePts, inkRibbon, paperTexture, patternPath, penMesh, ribbonFlames } from './bench'
 import './process.css'
 
 /*
@@ -18,24 +19,37 @@ import './process.css'
  * pattern, a ribbon burner (a row of small blue gas flames), a length of clear
  * glass, and the brick wall above it where finished pieces hang.
  *
- *   0.00–0.12  establishing; the intro headline (SECTIONS.process)
+ *   0.00–0.14  establishing; the headline (SECTIONS.process) strikes up at
+ *              0.05 and HOLDS through step 01 (it fades at 0.285-0.30), so the
+ *              landing (0.2) shows it with card 01 and the word half inked
  *   0.14–0.30  01 Listen     — the pattern is sketched: ink runs along the word
  *   0.30–0.46  02 Prototype  — the pattern complete, checked in red pencil;
  *                              a straight clear tube slides in above it
  *   0.46–0.62  03 Build      — the tube is heated and bent to the pattern,
  *                              glowing orange where it's hot (low, across the flame)
- *   0.62–0.78  04 Support    — the finished piece strikes on in pink on the
- *                              bench, the light running along it, and stays lit
- *   0.80–0.96  the stats bent in argon on the wall, striking on in sequence
+ *   0.62–0.78  04 Support    — the camera arrives, then the finished piece
+ *                              strikes on in AMBER (contact's "Say hello." stays
+ *                              the one pink script), the light running along it
+ *   0.80–0.96  the stats bent in argon on the wall, evenly spaced, each label
+ *              plate hung right under its figure
  *   0.96–1.00  everything lit for the cut
  *
- * Everything derives from `local`; frame.time only drives the flames' flicker.
+ * The word on the bench is "build" (the headline's last word; bench.ts).
+ * Everything derives from `local`, except the bend + the sign strike, which
+ * follow a StoryClock (kit/pace.ts): the hot bend front loops back over its
+ * own path, so a fast scroll must never run it faster than BEND_RATE (WCAG
+ * 2.3.1). frame.time only drives the flames' flicker.
+ * Lights (kit/shop.ts budget): the work light + the sign's light + the stats'
+ * wall wash on desktop (3); on phones one accent light does the sign, then the
+ * stats (2). The burner's blue is an additive plane (burnerGlow).
  * Pattern space (the paper's plane: x right, y up the page, z out of the paper)
  * is laid flat on the bench by the `pat` group.
  */
 
 const SHOW = [STATS[0], STATS[2], STATS[1]] // 10 years, $1M+, 15
 const TAGS = ['The pattern · ink on paper, full size', 'Reversed · checked · glass cut to length', 'Ribbon burner · heat, bend, repeat', 'Burned in · lit · looked after']
+/** the finished piece's gas (the paper's title block says AMBER 12 MM) */
+const SIGN: TubeColor = 'amber'
 
 const TOP = 0.92 // bench top (world y)
 const PX = -0.2 // paper centre (world x, z)
@@ -52,10 +66,19 @@ const BURNER_Z = 0.57
 const BURNER_L = 1.26
 const WALL_Z = -0.95
 const STAT_S = 0.28
-const STAT_GAP = 0.4
+/** clear space between the widest stat and its neighbour's column */
+const STAT_GAP = 0.34
+const STAT_Y = 1.95
 /** local ranges the marker / red pencil write over */
-const MARKER = [0.15, 0.275]
+const MARKER = [0.12, 0.27]
 const PENCIL = [0.325, 0.38]
+/** headline: fade in a→b, out c→d (clear of the 0–0.082 cut window) */
+const HEAD = [0.045, 0.065, 0.285, 0.3]
+/** the finished piece strikes once the camera has arrived (b4A at 0.655) */
+const SIGN_ON = 0.655
+const SIGN_DRAW = [0.655, 0.7]
+/** the bend (0.46–0.62) takes at least 1.3 s of time, however fast the scroll */
+const BEND_RATE = 0.16 / 1.3
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
 
@@ -69,6 +92,8 @@ interface Key {
   w: number
   h: number
   mode: Mode
+  /** the headline is up: portrait frames the subject below its panel */
+  head?: boolean
   /** portrait overrides */
   pt?: [number, number, number]
   pw?: number
@@ -77,10 +102,10 @@ interface Key {
   ppitch?: number
 }
 const K = {
-  est0: { t: [0.3, 1.4, -0.2], yaw: -15, pitch: 11, w: 3.5, h: 2.6, mode: 'head', pt: [0.1, 1.2, -0.1], pw: 2.4, ph: 2.1 },
-  est1: { t: [0.25, 1.1, -0.05], yaw: -9, pitch: 22, w: 2.9, h: 1.95, mode: 'head', pt: [0.1, 1.02, 0.02], pw: 2.0, ph: 1.5 },
-  topA: { t: [PX, TOP, PZ + 0.02], yaw: 0, pitch: 64, w: 1.8, h: 1.02, mode: 'card', pw: 1.5, ph: 1.0 },
-  topB: { t: [PX, TOP, PZ + 0.02], yaw: 3, pitch: 67, w: 1.7, h: 0.98, mode: 'card', pw: 1.42, ph: 0.95 },
+  est0: { t: [0.3, 1.4, -0.2], yaw: -15, pitch: 11, w: 3.5, h: 2.6, mode: 'head', pt: [-0.02, 1.06, 0.02], pw: 2.3, ph: 1.7, pyaw: -9, ppitch: 20 },
+  est1: { t: [0.25, 1.1, -0.05], yaw: -9, pitch: 22, w: 2.9, h: 1.95, mode: 'head', pt: [-0.08, 0.98, 0.04], pw: 1.95, ph: 1.4, pyaw: -5, ppitch: 30 },
+  topA: { t: [PX, TOP, PZ + 0.02], yaw: 0, pitch: 64, w: 1.8, h: 1.02, mode: 'card', head: true, pw: 1.5, ph: 1.0 },
+  topB: { t: [PX, TOP, PZ + 0.02], yaw: 3, pitch: 67, w: 1.7, h: 0.98, mode: 'card', head: true, pw: 1.42, ph: 0.95 },
   b2A: { t: [PX + 0.02, TOP, PZ - 0.03], yaw: -10, pitch: 52, w: 1.85, h: 1.0, mode: 'card', pw: 1.5, ph: 1.0 },
   b2B: { t: [PX + 0.02, TOP, PZ - 0.03], yaw: -14, pitch: 50, w: 1.75, h: 0.95, mode: 'card', pw: 1.45, ph: 0.95 },
   b3A: { t: [PX - 0.05, TOP + 0.03, PZ + 0.0], yaw: 28, pitch: 17, w: 1.55, h: 0.6, mode: 'card', pw: 1.2, ph: 0.75, ppitch: 24 },
@@ -127,24 +152,33 @@ function shiftStrokes(strokes: Stroke[], dx: number, dy: number): Stroke[] {
   return strokes.map(s => ({ pts: s.pts.map(p => V(p.x + dx, p.y + dy, p.z)), closed: s.closed }))
 }
 
+/** lowest point of a set of strokes (group space) */
+const bottomOf = (strokes: Stroke[]) => strokes.reduce((m, s) => s.pts.reduce((n, p) => Math.min(n, p.y), m), Infinity)
+
 /**
  * A stat value as tube strokes. Numerals are bent in the sans (EMS
  * Readability): the display face's 5 reads as an S and its zero is slashed.
- * "years" goes in script beside the 10.
+ * "years" goes in script beside the 10, its letters sitting on the numerals'
+ * baseline (the script's own baseline is ~font y 0.03; joins run at 0.262).
  */
 function statStrokes(i: number, S: number) {
+  let strokes: Stroke[]
+  let width: number
   if (i === 0) {
     const a = textStrokes('10', { font: 'sans', size: S, tracking: 0.08 })
     const k = S * 1.05
     const b = textStrokes('years', { font: 'script', size: k })
     const gap = S * 0.2
-    const total = a.width + gap + b.width
-    // script baseline is font y 0.262; centred text puts it at (0.262 - 0.5) * size
-    const by = -S / 2 - (0.262 - 0.5) * k
-    return { strokes: [...shiftStrokes(a.strokes, -total / 2 + a.width / 2, 0), ...shiftStrokes(b.strokes, -total / 2 + a.width + gap + b.width / 2, by)], width: total, height: S }
+    width = a.width + gap + b.width
+    // centred text puts font y at (y - 0.5) * size: letter feet (0.03) on the numerals' baseline (-S/2)
+    const by = -S / 2 - (0.03 - 0.5) * k
+    strokes = [...shiftStrokes(a.strokes, -width / 2 + a.width / 2, 0), ...shiftStrokes(b.strokes, -width / 2 + a.width + gap + b.width / 2, by)]
+  } else {
+    const t = textStrokes(i === 1 ? '$1M+' : '15', { font: 'sans', size: S, tracking: 0.08 })
+    strokes = t.strokes
+    width = t.width
   }
-  const t = textStrokes(i === 1 ? '$1M+' : '15', { font: 'sans', size: S, tracking: 0.08 })
-  return { strokes: t.strokes, width: t.width, height: S }
+  return { strokes, width, height: S, bottom: bottomOf(strokes) }
 }
 
 // ------------------------------------------------------------------ chapter
@@ -160,19 +194,22 @@ export default function create(): Chapter {
   const cards: HTMLElement[] = []
   let statsBox: HTMLElement
   const statEls: HTMLElement[] = []
-  const statX = [NaN, NaN, NaN]
+  /** last written label transform per stat ('' = portrait list) */
+  const statT = ['?', '?', '?']
 
   // scene handles
   let P: THREE.Vector3[] = []
   let glass: BendTube
   let sign: NeonPart
-  let signLight: ReturnType<typeof tubeLight>
   let marker: ReturnType<typeof inkRibbon>
   let pencil: ReturnType<typeof inkRibbon>
   let flames: ReturnType<typeof ribbonFlames>
-  let flameLight: THREE.RectAreaLight
+  let glow: ReturnType<typeof burnerGlow>
   let work: ReturnType<typeof fluorescentFixture>
-  let statLight: THREE.RectAreaLight
+  /** desktop: the sign's light + the stats' wall wash; phones: accent does both */
+  let signLight: THREE.RectAreaLight | null = null
+  let statLight: THREE.RectAreaLight | null = null
+  let accent: THREE.RectAreaLight | null = null
   let electrodes: THREE.Group
   let markerPen: THREE.Group
   let redPen: THREE.Group
@@ -182,18 +219,24 @@ export default function create(): Chapter {
   const qRestR = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), V(-0.1, 1, 0).normalize())
   const restM = V(0.9, -0.24, 0.0085)
   const restR = V(0.99, -0.16, 0.0065)
-  const stats: { g: THREE.Group; part: NeonPart; s: Striker; at: number; w: number }[] = []
+  const stats: { g: THREE.Group; part: NeonPart; s: Striker; at: number; w: number; bottom: number; x: number }[] = []
   const pieces: { part: NeonPart; s: Striker }[] = []
-  const signS = new Striker({ stutters: 2 })
-  const workS = new Striker({ stutters: 1, depth: 0.45 })
+  const signS = new Striker({ stutters: 1 })
+  // the work light is already on when the cut strikes the scene up: a plain
+  // ramp, no stutter (its strike swept a white bar through phone frames)
+  const workS = new Striker({ stutters: 0, ramp: 0.35 })
+  const bendClock = new StoryClock({ rate: BEND_RATE })
+  let statPitch = 1
   let restY = 0.3
   let lastShape = ''
   let settling = false
+  const signColor = new THREE.Color(TUBE[SIGN])
+  const statColor = new THREE.Color(TUBE.blue)
 
   // camera state (computed in update, written in camera)
   const pose = { position: V(0, 2, 4), target: V(0, 1, 0), fov: 38 }
   const cam = new THREE.PerspectiveCamera(38, 1, 0.05, 100)
-  const regions = { w: 0, h: 0, tick: 0, cardRight: 0, cardTop: 0, headBottom: 0, statsTop: 0, labelsTop: 0 }
+  const regions = { w: 0, h: 0, tick: 0, cardRight: 0, cardTop: 0, headBottom: 0, statsTop: 0, labelH: 90, labelW: 290 }
 
   const tA = V(0, 0, 0)
   const tB = V(0, 0, 0)
@@ -201,13 +244,35 @@ export default function create(): Chapter {
   const vR = V(0, 0, 0)
   const vU = V(0, 0, 0)
   const Y1 = V(0, 1, 0)
+  const sx = [0, 0, 0]
+
+  const gutter = (W: number) => Math.min(48, Math.max(16, W * 0.034))
+  const bands = (H: number) => (H < 520 ? { top: 56, bot: 56 } : { top: 76, bot: 64 })
+
+  /**
+   * Landscape stats frame height: short screens crop the wall above and below
+   * rather than shrink the row (the frame stays width-limited, so the
+   * numerals' pitch always leaves room for their label plates).
+   */
+  const statsH = (w: number, h: number, pxW: number, pxH: number) => Math.min(h, (w * pxH) / Math.max(1, pxW))
+
+  /** landscape stats frame: px per world unit at the wall for key k (see resolve) */
+  function statScale(k: Key, W: number, H: number) {
+    const g = gutter(W)
+    const b = bands(H)
+    const pxW = W - 2 * g
+    const pxH = Math.max(H * 0.3, H - b.bot - regions.labelH - 34 - b.top)
+    return Math.min(pxW / k.w, pxH / statsH(k.w, k.h, pxW, pxH))
+  }
 
   function measure(frame: Frame) {
     const r = regions
-    r.w = frame.width
-    r.h = frame.height
+    const W = frame.width
+    const H = frame.height
+    r.w = W
+    r.h = H
     let right = 0
-    let top = frame.height
+    let top = H
     for (const c of cards) {
       const b = c.getBoundingClientRect()
       right = Math.max(right, b.right)
@@ -216,11 +281,27 @@ export default function create(): Chapter {
     r.cardRight = right
     r.cardTop = top
     r.headBottom = head.getBoundingClientRect().bottom
-    const sb = statsBox.getBoundingClientRect()
-    r.statsTop = sb.top
-    let lt = frame.height
-    for (const s of statEls) lt = Math.min(lt, s.getBoundingClientRect().top)
-    r.labelsTop = lt
+    r.statsTop = statsBox.getBoundingClientRect().top
+    if (H > W) {
+      for (const s of statEls) s.style.minHeight = s.style.width = ''
+      return
+    }
+    // landscape: three label plates, one under each figure — as wide as a
+    // column of the numerals' pitch allows (no overlaps at any width), all
+    // the same height so their tops and bottoms line up
+    for (let pass = 0; pass < 2; pass++) {
+      const g = gutter(W)
+      const pitchPx = statPitch * statScale(K.stA, W, H)
+      r.labelW = Math.round(clamp(Math.min(290, W * 0.27, pitchPx - 18, (W - 2 * g - 24) / 3), 150, 290))
+      let lh = 0
+      for (const s of statEls) {
+        s.style.width = `${r.labelW}px`
+        s.style.minHeight = ''
+        lh = Math.max(lh, s.offsetHeight)
+      }
+      for (const s of statEls) s.style.minHeight = `${lh}px`
+      r.labelH = lh
+    }
   }
 
   function resolve(k: Key, portrait: boolean, frame: Frame, out: Resolved) {
@@ -232,13 +313,12 @@ export default function create(): Chapter {
     out.pitch = portrait && k.ppitch != null ? k.ppitch : k.pitch
     out.w = portrait && k.pw != null ? k.pw : k.w
     out.h = portrait && k.ph != null ? k.ph : k.h
-    const g = Math.min(48, Math.max(16, W * 0.034))
-    const topBand = 76
-    const botBand = 64
+    const g = gutter(W)
+    const b = bands(H)
     let x0 = 0
     let x1 = W
-    let y0 = topBand
-    let y1 = H - botBand
+    let y0 = b.top
+    let y1 = H - b.bot
     if (!portrait) {
       if (k.mode === 'card') {
         x0 = regions.cardRight + 20
@@ -247,12 +327,19 @@ export default function create(): Chapter {
         x0 = W * 0.26
         x1 = W - g
       } else {
+        // the figures above, their label plates right under them
         x0 = g
         x1 = W - g
-        y1 = regions.labelsTop - 14
+        y1 = H - b.bot - regions.labelH - 34
+        const h = statsH(out.w, out.h, x1 - x0, Math.max(H * 0.3, y1 - y0))
+        // cropped tight: centre on the figures instead of the wall + bench
+        out.t.y = lerp(out.t.y, STAT_Y - 0.08, clamp((out.h - h) / (out.h * 0.35)))
+        out.h = h
       }
-    } else if (k.mode === 'card') y1 = regions.cardTop - 12
-    else if (k.mode === 'head') y0 = regions.headBottom + 12
+    } else if (k.mode === 'card') {
+      y1 = regions.cardTop - 12
+      if (k.head) y0 = regions.headBottom + 12
+    } else if (k.mode === 'head') y0 = regions.headBottom + 12
     else y1 = regions.statsTop - 12
     if (x1 - x0 < W * 0.3) x0 = x1 - W * 0.3
     if (y1 - y0 < H * 0.3) y0 = y1 - H * 0.3
@@ -302,7 +389,7 @@ export default function create(): Chapter {
 
   // ---------------------------------------------------------------- bending
 
-  /** the glass centreline + heat for this local (pattern space) */
+  /** the glass centreline + heat for this (paced) progress (pattern space) */
   function shapeGlass(local: number) {
     const n = NPTS
     const C = glass.centre
@@ -364,12 +451,49 @@ export default function create(): Chapter {
     pen.quaternion.slerpQuaternions(qRest, qWrite, w)
   }
 
+  /** landscape: each label plate hangs under its figure; tops shared, no overlaps, on screen */
+  function placeLabels(frame: Frame) {
+    const W = frame.width
+    cam.fov = pose.fov
+    cam.aspect = W / Math.max(1, frame.height)
+    cam.position.copy(pose.position)
+    cam.lookAt(pose.target)
+    cam.updateProjectionMatrix()
+    cam.updateMatrixWorld()
+    const w = regions.labelW
+    let top = 0
+    stats.forEach((s, i) => {
+      tmp.set(s.x, STAT_Y, WALL_Z + 0.05).project(cam)
+      sx[i] = (tmp.x * 0.5 + 0.5) * W
+      tmp.set(s.x, STAT_Y + s.bottom, WALL_Z + 0.05).project(cam)
+      top = Math.max(top, (0.5 - tmp.y * 0.5) * frame.height)
+    })
+    // collisions (left to right), then the row back inside the gutters
+    const g = gutter(W)
+    for (let i = 1; i < 3; i++) sx[i] = Math.max(sx[i], sx[i - 1] + w + 12)
+    const over = sx[2] + w / 2 - (W - g)
+    if (over > 0) for (let i = 0; i < 3; i++) sx[i] -= over
+    const under = g - (sx[0] - w / 2)
+    if (under > 0) for (let i = 0; i < 3; i++) sx[i] += under
+    const y = Math.round(top + 16)
+    statEls.forEach((d, i) => {
+      const t = `translate3d(${Math.round(sx[i] - w / 2)}px, ${y}px, 0)`
+      if (statT[i] !== t) {
+        statT[i] = t
+        d.style.transform = t
+      }
+    })
+  }
+
   return {
     id: 'process',
     group,
     // the four steps, then the stats beat (srContent makes the first stat a keyboard stop)
     anchors: [...B.centers, 0.88],
-    busy: () => settling,
+    busy: () => settling || bendClock.busy,
+    onEnter() {
+      bendClock.reset()
+    },
     async init(ctx) {
       initAreaLights()
       const radial = ctx.mobile ? 6 : 8
@@ -378,7 +502,9 @@ export default function create(): Chapter {
       const wall = new THREE.Mesh(new THREE.PlaneGeometry(10, 5), brickMaterial({ width: 10, height: 5, tint: '#2e2230' }))
       wall.position.set(0, 2.5, WALL_Z)
       group.add(wall)
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), concreteMaterial({ width: 14, depth: 10 }))
+      // a duller floor than the shop default: the work light's pool on it read
+      // as a grainy smudge past the bench edge in the top-down frames
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), concreteMaterial({ width: 14, depth: 10, roughness: 0.62, color: '#0f0d11' }))
       floor.rotation.x = -Math.PI / 2
       group.add(floor)
 
@@ -409,6 +535,7 @@ export default function create(): Chapter {
       group.add(pat)
       const path = patternPath(WORD, NPTS)
       P = path.pts.map(p => V(p.x, p.y + WORD_Y, 0))
+      const dot = path.dot.map(p => V(p.x, p.y + WORD_Y, 0))
       restY = WORD_Y + path.height / 2 + 0.1
       // pencil guides: baseline / x-height / ascender of the script
       const yAt = (fy: number) => {
@@ -422,8 +549,8 @@ export default function create(): Chapter {
       )
       pat.add(paper)
 
-      // 01: the word in marker, drawn along its length
-      marker = inkRibbon([P], 0.0065, '#15121a', 0.94)
+      // 01: the word in marker, drawn along its length (the i's dot last)
+      marker = inkRibbon([P, dot], 0.0065, '#15121a', 0.94)
       pat.add(marker)
       // 02: checked in red pencil — electrode circles, a dimension line, a tick
       let minX = Infinity
@@ -456,21 +583,38 @@ export default function create(): Chapter {
       // 03: the clear glass that gets bent
       glass = new BendTube(NPTS, R_GLASS, radial)
       glass.material.uniforms.uLightPos.value.set(PX + 0.25, 2.8, 0.05) // the work light's glint
+      // hot glass: orange through the wall, kept near the bloom threshold (the
+      // front loops back over its own path — a bright one pulsed blocks)
+      ;(glass.material.uniforms.uHot.value as THREE.Color).setRGB(1.0, 0.42, 0.1).multiplyScalar(1.55)
       pat.add(glass.mesh)
 
-      // 04: the finished piece (pink), its light on the paper and the bench
-      sign = neonFromStrokes([{ pts: P.map(p => V(p.x, p.y, R_NEON)) }], { color: 'pink', radius: R_NEON, hdr: 3.8, blockout: false, electrodes: false, smooth: false, radial })
+      // 04: the finished piece (amber) + its dot, its light on the paper and the bench
+      const signStrokes: Stroke[] = [{ pts: P.map(p => V(p.x, p.y, R_NEON)) }, { pts: dot.map(p => V(p.x, p.y, R_NEON)) }]
+      sign = neonFromStrokes(signStrokes, { color: SIGN, radius: R_NEON, hdr: 3.8, blockout: false, electrodes: false, smooth: false, caps: false, radial })
       // the part not yet lit is discarded, so the clear glass shows there
       sign.setHideUndrawn(true)
       pat.add(sign.group)
-      const spill = neonSpill([{ pts: P }], { color: 'pink', width: PAPER_W, height: PAPER_H, blur: 0.05, strength: 0.28, res: 512 })
+      const spill = neonSpill([{ pts: P }, { pts: dot }], { color: SIGN, width: PAPER_W, height: PAPER_H, blur: 0.05, strength: 0.28, res: 512 })
       spill.position.z = 0.0016
       pat.add(spill)
       sign.follow(spill)
-      signLight = tubeLight(sign, { width: 1.2, height: 0.5, intensity: 1.6 })
-      signLight.position.set(PX, TOP + 0.28, PZ - WORD_Y)
-      signLight.rotation.x = -Math.PI / 2
-      group.add(signLight)
+      // lights (fixed count: desktop 3, phones 2 — see the header)
+      const bench = (l: THREE.RectAreaLight) => {
+        l.color.copy(signColor)
+        l.width = 1.2
+        l.height = 0.5
+        l.position.set(PX, TOP + 0.28, PZ - WORD_Y)
+        l.rotation.set(-Math.PI / 2, 0, 0)
+      }
+      if (ctx.mobile) {
+        accent = new THREE.RectAreaLight(signColor, 0, 1.2, 0.5)
+        bench(accent)
+        group.add(accent)
+      } else {
+        signLight = new THREE.RectAreaLight(signColor, 0, 1.2, 0.5)
+        bench(signLight)
+        group.add(signLight)
+      }
 
       // electrodes + the burn-in leads to a small transformer (shown once it's bent)
       electrodes = new THREE.Group()
@@ -535,10 +679,10 @@ export default function create(): Chapter {
       flames = ribbonFlames(BURNER_L, 0.075, 58)
       flames.mesh.position.set(0, 0.078, 0)
       burner.add(flames.mesh)
-      flameLight = new THREE.RectAreaLight('#3d78ff', 0, BURNER_L, 0.08)
-      flameLight.position.set(PX, TOP + 0.12, BURNER_Z - 0.02)
-      flameLight.rotation.x = -Math.PI / 2 + 0.55
-      group.add(flameLight)
+      // the flames' blue on the bench top and the paper's front edge
+      glow = burnerGlow(BURNER_L + 0.24, 0.62)
+      glow.mesh.position.set(0, 0.0032, 0.02)
+      burner.add(glow.mesh)
 
       // ---------------- glass: offcuts on the bench, stock leaning on the wall
       const glassMat = new THREE.MeshStandardMaterial({ color: 0xdfe8f0, metalness: 0, roughness: 0.08, transparent: true, opacity: 0.4, envMapIntensity: 1.4, depthWrite: false })
@@ -574,6 +718,10 @@ export default function create(): Chapter {
       work = fluorescentFixture(1.6, { color: '#ffe3c4', intensity: 40 })
       work.group.position.set(PX + 0.25, 2.8, 0.05)
       group.add(work.group)
+      // only its light is in the story: the fixture itself hangs out of shot
+      // (its tube swept through the phone establishing tilt as a white bar,
+      // and hung over the stats in the wall frames)
+      for (const o of work.group.children.slice()) if (o !== work.light) work.group.remove(o)
       await nextFrame()
 
       // ---------------- finished pieces on the wall (lit from the first frame)
@@ -596,7 +744,8 @@ export default function create(): Chapter {
         group.add(g)
         pieces.push({ part, s: new Striker({ stutters: 1 }) })
       }
-      piece(arrow, 'amber', 2.2, 1.42, 0.3, true, true)
+      // pointing down at the bench, clear of the stats' label plates
+      piece(arrow, 'amber', 2.12, 1.1, 0.26, true, true)
       piece(star, 'violet', 2.3, 2.3, 0.12, false)
 
       // ---------------- the stats, bent in argon on the wall
@@ -610,10 +759,14 @@ export default function create(): Chapter {
         g.add(sp)
         part.follow(sp)
         group.add(g)
-        stats.push({ g, part, s: new Striker({ stutters: 1 }), at: 0.815 + i * 0.025, w: st.width })
+        stats.push({ g, part, s: new Striker({ stutters: 1 }), at: 0.815 + i * 0.025, w: st.width, bottom: st.bottom, x: 0 })
       }
-      // frame the row (landscape) / the stack (portrait) from the bent widths
-      const rowW = stats.reduce((a, b) => a + b.w, 0) + STAT_GAP * 2
+      // landscape: evenly spaced columns (each label plate centres under its
+      // figure, and a column is wide enough for its plate); the row centred
+      statPitch = Math.max(...stats.map(s => s.w)) + STAT_GAP
+      const shift = (stats[0].w - stats[2].w) / 4
+      stats.forEach((s, i) => (s.x = (i - 1) * statPitch + shift))
+      const rowW = 2 * statPitch + (stats[0].w + stats[2].w) / 2
       const colW = Math.max(...stats.map(s => s.w))
       K.stA.w = rowW + 0.75
       K.stB.w = rowW + 0.6
@@ -621,9 +774,11 @@ export default function create(): Chapter {
       K.stA.pw = colW + 0.45
       K.stB.pw = colW + 0.38
       K.stC.pw = colW + 0.32
-      statLight = new THREE.RectAreaLight('#2cb4ff', 0, 3.4, 0.9)
-      statLight.position.set(0, 1.95, WALL_Z + 0.4)
-      group.add(statLight)
+      if (!ctx.mobile) {
+        statLight = new THREE.RectAreaLight(statColor, 0, 3.4, 0.9)
+        statLight.position.set(0, STAT_Y, WALL_Z + 0.4)
+        group.add(statLight)
+      }
 
       // ---------------- DOM
       head = el('div', 'pr-head', undefined, ctx.stage)
@@ -652,17 +807,20 @@ export default function create(): Chapter {
     },
 
     update(local, frame, ctx) {
-      const calm = ctx.reducedMotion || !!frame.still || Math.abs(frame.velocity) > 2.5
+      // strikes stutter only at a reading pace; any brisk scroll ramps them
+      const calm = ctx.reducedMotion || !!frame.still || Math.abs(frame.velocity) > 0.9
       const portrait = frame.height > frame.width
       if (regions.w !== frame.width || regions.h !== frame.height || ++regions.tick % 90 === 0) measure(frame)
       computePose(local, frame)
+      // the bend + the finished piece follow a paced clock (see BEND_RATE)
+      const qb = bendClock.update(local, frame.dt)
 
       // ---------------- world + post
       const wp = ctx.world.params
       wp.fog = 0.02
       wp.fogColor = '#07050a'
       wp.glow = 0.3
-      wp.glowColor = local > 0.62 ? '#ff2e97' : '#2c6bff'
+      wp.glowColor = qb > SIGN_ON ? TUBE[SIGN] : '#2c6bff'
       wp.motes = 0.55
       wp.moteColor = '#ffe2c8'
       wp.env = 0.5
@@ -675,23 +833,26 @@ export default function create(): Chapter {
       for (const p of pieces) p.part.setLevel(p.s.update(true, frame.dt, calm))
 
       // ---------------- 01: ink
-      marker.setDraw(ease.inOutQuad(segment(local, MARKER[0], MARKER[1])))
+      const md = ease.inOutQuad(segment(local, MARKER[0], MARKER[1]))
+      marker.setDraw(md)
       pencil.setDraw(segment(local, PENCIL[0], PENCIL[1]))
-      posePen(markerPen, marker, MARKER, ease.inOutQuad(segment(local, MARKER[0], MARKER[1])), restM, qRestM, local)
+      posePen(markerPen, marker, MARKER, md, restM, qRestM, local)
       posePen(redPen, pencil, PENCIL, segment(local, PENCIL[0], PENCIL[1]), restR, qRestR, local)
 
-      // ---------------- 02/03: the glass
-      glass.mesh.visible = local >= 0.3 && local < 0.72
+      // ---------------- 02/03: the glass (the bend is paced: qb)
+      // straight (sliding in with the scroll) until the paced bend starts
+      const gq = qb >= 0.46 ? qb : Math.min(local, 0.46)
+      glass.mesh.visible = gq >= 0.3 && gq < 0.71
       if (glass.mesh.visible) {
-        const key = local < 0.46 ? `r${segment(local, 0.305, 0.365).toFixed(4)}` : local >= 0.62 ? 'bent' : `b${local.toFixed(5)}`
+        const key = gq < 0.46 ? `r${segment(gq, 0.305, 0.365).toFixed(4)}` : gq >= 0.62 ? 'bent' : `b${gq.toFixed(5)}`
         if (key !== lastShape) {
           lastShape = key
-          shapeGlass(local)
+          shapeGlass(gq)
           glass.commit()
         }
       }
       // flames: the heat follows the bend
-      const b3 = segment(local, 0.46, 0.62)
+      const b3 = segment(qb, 0.46, 0.62)
       const bendF = ease.inOutQuad(segment(b3, 0.2, 0.9))
       const fi = bendF * (NPTS - 1)
       const fx = P.length ? P[Math.min(NPTS - 1, Math.round(fi))].x : 0
@@ -708,16 +869,18 @@ export default function create(): Chapter {
       const dz = pose.position.z - BURNER_Z
       flames.mesh.rotation.x = Math.atan2(-dy, dz)
       fu.uFore.value = Math.max(0.3, dz / Math.hypot(dy, dz))
-      const flick = ctx.reducedMotion || frame.still ? 0 : Math.sin(frame.time * 21) * 0.08 + Math.sin(frame.time * 33.7) * 0.05
-      flameLight.intensity = (2.2 + 1.4 * heating) * (1 + flick)
+      const flick = ctx.reducedMotion || frame.still ? 0 : Math.sin(frame.time * 21) * 0.04 + Math.sin(frame.time * 33.7) * 0.025
+      const gu = glow.uniforms
+      gu.uLevel.value = (0.2 + 0.1 * heating) * (1 + flick)
+      gu.uFocus.value = (fx + (BURNER_L + 0.24) / 2) / (BURNER_L + 0.24)
+      gu.uBoost.value = 0.8 * heating
 
       // ---------------- 04: the finished piece strikes on and stays lit
-      const signOn = local >= 0.625
+      const signOn = qb >= SIGN_ON
       const sl = signS.update(signOn, frame.dt, calm)
       sign.setLevel(sl)
-      sign.setDraw(ease.inOutQuad(segment(local, 0.625, 0.685)))
-      signLight.sync()
-      electrodes.visible = local >= 0.6
+      sign.setDraw(ease.inOutQuad(segment(qb, SIGN_DRAW[0], SIGN_DRAW[1])))
+      electrodes.visible = qb >= 0.6
 
       // ---------------- stats on the wall
       let avg = 0
@@ -729,61 +892,58 @@ export default function create(): Chapter {
         // hung unlit on the wall once the camera heads there (not behind the intro)
         s.g.visible = local >= 0.765
         if (portrait) s.g.position.set(0, 2.54 - i * 0.58, WALL_Z + 0.05)
-        else {
-          const gap = STAT_GAP
-          const total = stats.reduce((a, b) => a + b.w, 0) + gap * 2
-          let x = -total / 2
-          for (let j = 0; j < i; j++) x += stats[j].w + gap
-          s.g.position.set(x + s.w / 2, 1.95, WALL_Z + 0.05)
-        }
+        else s.g.position.set(s.x, STAT_Y, WALL_Z + 0.05)
         if (lv > 0.001 && lv < 0.999) settling = true
       })
-      statLight.intensity = avg * 7
-      if (portrait) {
-        statLight.width = 1.6
-        statLight.height = 1.8
-        statLight.position.y = 1.96
-      } else {
-        statLight.width = 3.6
-        statLight.height = 0.9
-        statLight.position.y = 1.95
+      const statI = avg * 7
+      const signI = sl * 1.6
+      const wallW = portrait ? 1.6 : 3.6
+      const wallH = portrait ? 1.8 : 0.9
+      const wallY = portrait ? 1.96 : STAT_Y
+      if (statLight && signLight) {
+        signLight.intensity = signI
+        statLight.intensity = statI
+        statLight.width = wallW
+        statLight.height = wallH
+        statLight.position.y = wallY
+      } else if (accent) {
+        // phones: one light, two jobs — the piece on the bench, then (once the
+        // camera has turned to the wall) the stats' wash
+        if (local < 0.8) {
+          accent.color.copy(signColor)
+          accent.width = 1.2
+          accent.height = 0.5
+          accent.position.set(PX, TOP + 0.28, PZ - WORD_Y)
+          accent.rotation.set(-Math.PI / 2, 0, 0)
+          accent.intensity = signI * (1 - smoothstep(0.77, 0.8, local))
+        } else {
+          accent.color.copy(statColor)
+          accent.width = wallW
+          accent.height = wallH
+          accent.position.set(0, wallY, WALL_Z + 0.4)
+          accent.rotation.set(0, 0, 0)
+          accent.intensity = statI
+        }
       }
       if ((wl > 0.001 && wl < 0.999) || (sl > 0.001 && sl < 0.999)) settling = true
 
       // ---------------- DOM
-      reveal(head, smoothstep(0.03, 0.055, local) * (1 - smoothstep(0.128, 0.142, local)), 0)
-      setRise(title, local > 0.035 && local < 0.14)
+      reveal(head, smoothstep(HEAD[0], HEAD[1], local) * (1 - smoothstep(HEAD[2], HEAD[3], local)), 0)
+      setRise(title, local > HEAD[0] + 0.004 && local < HEAD[3])
       cards.forEach((c, i) => {
         const a = 0.14 + i * 0.16
-        reveal(c, window01(local, a + 0.004, a + 0.156, 0.012), 10)
+        // no rise: a 10 px drop dipped the card into the phone switch plate
+        reveal(c, window01(local, a + 0.004, a + 0.156, 0.012), 0)
       })
-      const sv = window01(local, 0.8, 0.955, 0.02)
+      // the plates appear once the camera has arrived on the wall
+      const sv = window01(local, 0.825, 0.955, 0.02)
+      statEls.forEach((d, i) => reveal(d, sv * (local >= stats[i].at - 0.005 ? 1 : 0), 0))
       if (!portrait) {
-        cam.fov = pose.fov
-        cam.aspect = frame.width / Math.max(1, frame.height)
-        cam.position.copy(pose.position)
-        cam.lookAt(pose.target)
-        cam.updateProjectionMatrix()
-        cam.updateMatrixWorld()
+        if (sv > 0) placeLabels(frame)
+      } else if (statT[0] !== '') {
+        statT.fill('')
+        for (const d of statEls) d.style.transform = ''
       }
-      statEls.forEach((d, i) => {
-        const on = local >= stats[i].at - 0.005
-        reveal(d, sv * (on ? 1 : 0), 0)
-        if (!portrait) {
-          tmp.copy(stats[i].g.position)
-          tmp.project(cam)
-          // centred under its numeral, kept on screen
-          const half = Math.min(290, frame.width * 0.27) / 2 + 12
-          const x = Math.round(clamp((tmp.x * 0.5 + 0.5) * frame.width, half, frame.width - half))
-          if (statX[i] !== x) {
-            statX[i] = x
-            d.style.transform = `translate3d(${x}px, 0, 0) translate3d(-50%, 0, 0)`
-          }
-        } else if (statX[i] !== -1) {
-          statX[i] = -1
-          d.style.transform = ''
-        }
-      })
     },
 
     camera(_local, _frame, out) {

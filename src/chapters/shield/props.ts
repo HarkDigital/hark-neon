@@ -334,6 +334,62 @@ export function circleStroke(cx: number, cy: number, r: number, z = 0, n = 10): 
   return { pts, closed: true }
 }
 
+// ------------------------------------------------------------------ fake light
+
+const glowTex = new Map<string, THREE.CanvasTexture>()
+/** a soft white ellipse (or a pool that fades away from one edge), cached */
+function glowTexture(kind: 'round' | 'pool') {
+  const hit = glowTex.get(kind)
+  if (hit) return hit
+  const c = document.createElement('canvas')
+  c.width = 128
+  c.height = 128
+  const g = c.getContext('2d')!
+  // pool: a half ellipse, brightest at the middle of the top edge (the wall),
+  // gone at the sides and toward the camera; round: centred. Gaussian falloff
+  // (no visible rim), zero at the plane's edges.
+  if (kind === 'pool') g.setTransform(1, 0, 0, 2, 0, 0)
+  const cy = kind === 'pool' ? 0 : 64
+  const grd = g.createRadialGradient(64, cy, 0, 64, cy, 64)
+  for (let i = 0; i <= 10; i++) {
+    const x = i / 10
+    const a = i === 10 ? 0 : Math.exp(-(x * x) / (2 * 0.3 * 0.3))
+    grd.addColorStop(x, `rgba(255,255,255,${a.toFixed(4)})`)
+  }
+  g.fillStyle = grd
+  g.fillRect(0, 0, 128, 128)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.NoColorSpace
+  glowTex.set(kind, t)
+  return t
+}
+
+/**
+ * An additive glow plane: the cheap stand-in for a RectAreaLight's pool on a
+ * wall or floor (one textured quad instead of a per-pixel light on every lit
+ * surface). setLight(colour, level) drives it; hidden at 0.
+ */
+export function glowPlane(w: number, h: number, kind: 'round' | 'pool' = 'round') {
+  const mat = new THREE.MeshBasicMaterial({
+    map: glowTexture(kind),
+    color: 0x000000,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+    fog: false,
+  })
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)
+  mesh.renderOrder = 1
+  mesh.visible = false
+  return Object.assign(mesh, {
+    setLight(color: THREE.Color, level: number) {
+      mat.color.copy(color).multiplyScalar(level)
+      mesh.visible = level > 0.003
+    },
+  })
+}
+
 // ------------------------------------------------------------------ sparks
 
 function hash(n: number) {

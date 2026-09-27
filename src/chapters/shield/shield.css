@@ -22,6 +22,13 @@
   padding: 26px 28px 24px;
   justify-items: start;
 }
+/* a big panel over the animating canvas: opaque smoked acrylic, no
+   backdrop-filter (the blur dropped frames when the GPU was shared) */
+.sh-copy.hud-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(8, 6, 12, 0.92);
+}
 .sh-copy.hud-panel::before {
   background: #d9f1ff;
   box-shadow: 0 0 0 1px rgba(190, 232, 255, 0.5), 0 0 12px rgba(44, 180, 255, 0.6), 0 0 32px rgba(44, 180, 255, 0.28);
@@ -126,14 +133,82 @@
   }
 }
 
-/* short phones: the legend waits for the keep-watch beat, where it swaps in
-   for the body (the neon 24/7 is the subject then) — keeps the sign clear */
-@media (orientation: portrait) and (max-height: 720px) {
+/* short phones (and short landscape below): the legend waits for the
+   keep-watch beat, where it swaps in for the body (the neon 24/7 is the
+   subject then) — keeps the sign clear and the panel inside the bands */
+@media (orientation: portrait) and (max-height: 720px), (orientation: landscape) and (max-height: 500px) {
   .sh-stat,
   .sh-copy.is-watch .sh-body {
     display: none;
   }
   .sh-copy.is-watch .sh-stat {
     display: grid;
+  }
+}
+
+/* short landscape (a phone sideways after "Continue anyway", 200% zoom on a
+   laptop): the chrome bands are 52px; the panel goes back to the left (the
+   camera frames the signs right at any landscape aspect) and compacts so it
+   fits between the logo and the Hum/Motion plate */
+@media (orientation: landscape) and (max-height: 500px) {
+  .sh-dock {
+    left: var(--gutter);
+    right: auto;
+    top: var(--safe-top);
+    bottom: var(--safe-bottom);
+    width: min(440px, 40vw);
+    align-items: center;
+  }
+  .sh-copy {
+    gap: 8px;
+    padding: 13px 16px 14px;
+    max-height: 100%;
+  }
+  .sh-copy.hud-panel::before {
+    left: 16px;
+  }
+  .sh-copy .hud-eyebrow {
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    line-height: 1.35;
+  }
+  .sh-copy .hud-eyebrow::before {
+    flex: none;
+    width: 14px;
+  }
+  .sh-title {
+    font-size: clamp(1.7rem, 3.6vw, 2.2rem);
+    line-height: 1.02;
+  }
+  .sh-body {
+    font-size: 13px;
+    line-height: 1.45;
+    max-width: none;
+  }
+  .sh-cta {
+    margin-top: 2px;
+    padding: 10px 18px;
+    font-size: 11px;
+  }
+  .sh-stat {
+    gap: 12px;
+    margin-top: 0;
+    padding-top: 8px;
+  }
+  .sh-stat-v {
+    font-size: 22px;
+  }
+  .sh-stat-l {
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+}
+/* very short (≤ 360px tall, e.g. a small phone sideways): headline + CTA
+   only (the full copy is in the accessible layer; the signs carry 24/7) */
+@media (orientation: landscape) and (max-height: 360px) {
+  .sh-copy .sh-body,
+  .sh-copy.is-watch .sh-stat {
+    display: none;
   }
 }

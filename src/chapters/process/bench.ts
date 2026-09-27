@@ -4,8 +4,9 @@ import { textStrokes, type Stroke } from '../../kit/type'
 /*
  * THE BENCH — props for the process chapter (a glass bender's bench):
  *
- *   patternPath()    the design the tube is bent to ("hello" in script), as
- *                    ONE continuous centreline, resampled evenly by arc length
+ *   patternPath()    the design the tube is bent to ("build" in script, the
+ *                    headline's last word), as ONE continuous centreline,
+ *                    resampled evenly by arc length, plus the i's dot
  *   paperTexture()   the full-size pattern sheet: grid, pencil guides, taped
  *                    corners and a hand-lettered title block (single-stroke)
  *   inkRibbon()      marker / pencil lines laid flat on the paper that draw
@@ -23,39 +24,49 @@ import { textStrokes, type Stroke } from '../../kit/type'
 // ------------------------------------------------------------------ the design
 
 /**
- * "hello" as one centreline (z = 0), centred on the origin, resampled to `n`
- * evenly spaced points. The EMS script "o" ends in a detached swash; the
- * pattern closes the o and finishes with a loop exit instead, so the whole
- * word is one tube from the h's lead-in to the o's tail.
+ * "build" as one pen line, in EMS Allure font units (cap height 1, joins at
+ * y 0.262), laid out from the font's own glyphs (b u i l d, advances
+ * 0.595 / 0.708 / 0.356 / 0.373). The font's b closes its bowl back at the
+ * stem foot and its d starts at the bowl's top with a descender tail — neither
+ * joins — so, as a bender would draw it: the b's bowl runs counter-clockwise
+ * from the stem foot and ties off at the top into the u; the d gets an
+ * overcurve up to its bowl, back-traces the top, and ends in a short exit
+ * flick instead of the tail. The i's dot is its own little tube.
+ */
+const BUILD = [
+  -0.045, 0.262, 0.068, 0.361, 0.189, 0.469, 0.333, 0.581, 0.446, 0.681, 0.564, 0.834, 0.595, 0.964, 0.532, 1.031, 0.406, 0.973, 0.279, 0.807, 0.14, 0.514, 0.054, 0.289,
+  0.041, 0.104, 0.054, 0.077, 0.13, 0.025, 0.27, 0.045, 0.4, 0.13, 0.49, 0.26, 0.53, 0.37, 0.51, 0.455, 0.43, 0.5, 0.33, 0.49, 0.26, 0.44, 0.29, 0.385, 0.38, 0.39, 0.48, 0.43,
+  0.58, 0.445, 0.663, 0.442, 0.568, 0.31, 0.518, 0.176, 0.514, 0.081, 0.581, 0.041, 0.708, 0.077, 0.802, 0.199, 0.92, 0.342, 1.014, 0.505, 1.059, 0.491, 0.901, 0.235,
+  0.888, 0.14, 0.884, 0.077, 0.96, 0.031, 1.054, 0.059, 1.186, 0.172, 1.258, 0.262, 1.357, 0.338, 1.389, 0.469, 1.249, 0.122, 1.276, 0.031, 1.38, 0.009, 1.492, 0.099,
+  1.565, 0.185, 1.613, 0.262, 1.623, 0.252, 1.79, 0.379, 2.001, 0.612, 2.154, 0.843, 2.223, 0.947, 2.204, 1.014, 2.105, 1.027, 2.007, 0.964, 1.871, 0.761, 1.718, 0.486,
+  1.618, 0.283, 1.587, 0.122, 1.628, 0.036, 1.722, 0.027, 1.831, 0.077, 1.938, 0.189, 1.988, 0.262, 2.052, 0.36, 2.162, 0.46, 2.302, 0.53, 2.422, 0.545, 2.492, 0.51,
+  2.501, 0.446, 2.464, 0.509, 2.401, 0.528, 2.248, 0.478, 2.1, 0.379, 1.978, 0.252, 1.942, 0.153, 1.951, 0.072, 2.05, 0.023, 2.145, 0.09, 2.284, 0.212, 2.428, 0.361,
+  2.586, 0.478, 2.793, 0.654, 2.988, 0.847, 3.023, 0.956, 3.019, 1.014, 2.946, 1.031, 2.835, 0.979, 2.762, 0.906, 2.663, 0.748, 2.586, 0.608, 2.451, 0.31, 2.384, 0.095,
+  2.392, 0.03, 2.452, 0.01, 2.532, 0.04, 2.612, 0.1,
+]
+const BUILD_DOT = [1.486, 0.69, 1.432, 0.622]
+/** the word bent on the bench (the paper's title block names it) */
+export const PATTERN_WORD = 'BUILD'
+
+const pairs = (a: number[], s: number) => Array.from({ length: a.length / 2 }, (_, i) => new THREE.Vector3(a[i * 2] * s, a[i * 2 + 1] * s, 0))
+
+/**
+ * The pattern word as one centreline (z = 0), centred on the origin,
+ * resampled to `n` evenly spaced points, plus the i's dot (a separate short
+ * stroke, same space). `size` = cap height.
  */
 export function patternPath(size: number, n: number) {
-  const t = textStrokes('hello', { font: 'script', size })
-  const strokes = t.strokes.map(s => s.pts.map(p => p.clone()))
-  let tail: THREE.Vector3[] = []
-  if (strokes.length === 6) {
-    // drop the o's detached exit swash; loop out of the o's top instead
-    strokes.pop()
-    const o = strokes[strokes.length - 1]
-    const e = o[o.length - 1]
-    const u = size
-    tail = [
-      [0.012, 0.062],
-      [0.04, 0.1],
-      [0.105, 0.118],
-      [0.19, 0.098],
-    ].map(([dx, dy]) => new THREE.Vector3(e.x + dx * u, e.y + dy * u, 0))
-  }
-  const raw: THREE.Vector3[] = []
-  for (const s of strokes) for (const p of s) if (!raw.length || raw[raw.length - 1].distanceToSquared(p) > 1e-10) raw.push(p)
-  raw.push(...tail)
+  const raw = pairs(BUILD, size)
+  const dot = pairs(BUILD_DOT, size)
   // centre the bbox
   const box = new THREE.Box3().setFromPoints(raw)
   const c = box.getCenter(new THREE.Vector3())
   for (const p of raw) p.sub(c).setZ(0)
+  for (const p of dot) p.sub(c).setZ(0)
   const curve = new THREE.CatmullRomCurve3(raw, false, 'centripetal', 0.5)
   const pts = curve.getSpacedPoints(n - 1)
   const size3 = box.getSize(new THREE.Vector3())
-  return { pts, width: size3.x, height: size3.y, length: curve.getLength() }
+  return { pts, dot, width: size3.x, height: size3.y, length: curve.getLength() }
 }
 
 // ------------------------------------------------------------------ paper
@@ -159,8 +170,8 @@ export function paperTexture(w: number, h: number, guides: number[], res = 1024)
     const t = textStrokes(str, { font: 'sans', size, tracking: 0.18, align: 'left' })
     penStrokes(g, t.strokes, px => X(x + t.width / 2 + px), py => Y(y + py))
   }
-  letter('PATTERN  HELLO', bx + 0.016, by + bh * 0.76, 0.024)
-  letter('ROSE 12 MM', bx + 0.016, by + bh * 0.26, 0.02)
+  letter(`PATTERN  ${PATTERN_WORD}`, bx + 0.016, by + bh * 0.76, 0.024)
+  letter('AMBER 12 MM', bx + 0.016, by + bh * 0.26, 0.02)
   letter('1:1', bx + bw * 0.58 + 0.03, by + bh * 0.26, 0.02)
   letter('REV', bx + bw * 0.58 + 0.08, by + bh * 0.26, 0.02)
 
@@ -522,6 +533,53 @@ const FLAME_FRAG = /* glsl */ `
     gl_FragColor = vec4(col * uLevel, 1.0);
   }
 `
+
+const GLOW_FRAG = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uLevel, uFocus, uBoost;
+  varying vec2 vUv;
+  void main() {
+    // v = 0 at the burner, 1 = the far edge toward the paper
+    float d = vUv.y;
+    float fall = exp(-d * 5.5) * 0.85 + exp(-d * 1.6) * 0.15;
+    float ends = smoothstep(0.0, 0.14, vUv.x) * (1.0 - smoothstep(0.86, 1.0, vUv.x));
+    float f = (vUv.x - uFocus) * 6.0;
+    float hot = 1.0 + uBoost * exp(-f * f);
+    gl_FragColor = vec4(uColor * fall * ends * hot * uLevel, 1.0);
+  }
+`
+
+/**
+ * The burner's blue light on the bench top and the paper's front edge, faked
+ * with an additive plane (a RectAreaLight here cost a fifth of the frame).
+ * Lies flat on the bench top: x along the burner, back toward the paper (-z).
+ */
+export function burnerGlow(length: number, back: number, color = '#3d78ff') {
+  const g = new THREE.PlaneGeometry(length, back)
+  // v = 0 along the burner (local z = 0), running back toward -z, facing up
+  g.translate(0, back / 2, 0)
+  g.rotateX(-Math.PI / 2)
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uLevel: { value: 0.3 },
+      uFocus: { value: 0.5 },
+      uBoost: { value: 0 },
+    },
+    vertexShader: FLAME_VERT,
+    fragmentShader: GLOW_FRAG,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
+  })
+  const mesh = new THREE.Mesh(g, mat)
+  mesh.renderOrder = 1
+  return { mesh, uniforms: mat.uniforms }
+}
 
 /** The ribbon burner's flames: `length` along x, the jets at y = 0, `height` max. */
 export function ribbonFlames(length: number, height: number, jets: number) {

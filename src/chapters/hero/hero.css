@@ -1,41 +1,77 @@
-/* HERO · Lights On — chapter-scoped copy layout (.hr-*) */
+/* HERO · Lights On — chapter-scoped copy layout (.hr-*)
 
-/* intro: top-left over dark brick; a soft smoked scrim keeps the body copy
-   readable whatever the fluorescents do to the wall behind it */
+   landing (.hr-intro): eyebrow + the h1 + manifesto + scroll hint.
+     landscape: one column on the left, vertically centred between the chrome
+     bands, over a soft smoked scrim; the dark wall sits right of it.
+     portrait: a title plate in the top band (eyebrow + h1) and a plate in the
+     bottom band (manifesto + hint); the sign hangs between them.
+   payoff (.hr-payoff): the locale line + the two CTAs (the lit wall is the
+     headline). Landscape: left, centred; portrait: a plate in the bottom band.
+
+   index.ts measures these boxes to frame the camera into the free space, so
+   the grids use justify-items: start (children shrink to their content). */
+
 .hr-intro {
   position: absolute;
   left: var(--gutter);
   top: var(--safe-top);
-  max-width: min(470px, calc(100vw - 2 * var(--gutter)));
+  bottom: var(--safe-bottom);
+  width: min(560px, 44vw);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hr-intro-inner {
+  position: relative;
   display: grid;
-  gap: 14px;
+  gap: 26px;
   justify-items: start;
 }
-.hr-intro::before {
+.hr-intro-inner::before {
   content: '';
   position: absolute;
   z-index: -1;
-  left: -90px;
-  top: -70px;
-  right: -110px;
-  bottom: -70px;
-  background: radial-gradient(closest-side, rgba(5, 4, 8, 0.72), rgba(5, 4, 8, 0.5) 55%, rgba(5, 4, 8, 0));
+  left: -110px;
+  top: -90px;
+  right: -90px;
+  bottom: -90px;
+  background: radial-gradient(closest-side, rgba(5, 4, 8, 0.74), rgba(5, 4, 8, 0.52) 58%, rgba(5, 4, 8, 0));
   pointer-events: none;
 }
-.hr-intro .hud-body {
+.hr-intro-head,
+.hr-intro-foot {
+  display: grid;
+  justify-items: start;
+}
+.hr-intro-head {
+  gap: 20px;
+}
+.hr-intro-foot {
+  gap: 14px;
+}
+.hr-title {
+  font-size: clamp(3rem, 6.3vw, 7rem);
+}
+.hr-manifesto {
   color: rgba(255, 246, 251, 0.86);
 }
 .hr-hint {
-  margin: 4px 0 0;
+  margin: 0;
+}
+.hr-eyebrow-text {
+  min-width: 0;
+}
+.hr-nowrap {
+  white-space: nowrap;
 }
 
-/* payoff: the h1 + CTAs on the left, vertically centred between the chrome bands */
+/* payoff: the locale line + CTAs on the left, vertically centred between the bands */
 .hr-payoff {
   position: absolute;
   left: var(--gutter);
   top: var(--safe-top);
   bottom: var(--safe-bottom);
-  width: min(600px, 44vw);
+  width: min(460px, 40vw);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -43,97 +79,158 @@
 .hr-payoff-inner {
   position: relative;
   display: grid;
-  gap: 26px;
+  gap: 22px;
   justify-items: start;
 }
 .hr-payoff-inner::before {
   content: '';
   position: absolute;
   z-index: -1;
-  left: -120px;
-  top: -90px;
-  right: -90px;
-  bottom: -90px;
+  left: -110px;
+  top: -80px;
+  right: -60px;
+  bottom: -80px;
   background: radial-gradient(closest-side, rgba(5, 4, 8, 0.6), rgba(5, 4, 8, 0.36) 60%, rgba(5, 4, 8, 0));
   pointer-events: none;
-}
-.hr-title {
-  font-size: clamp(3rem, 7.4vw, 7.6rem);
 }
 .hr-ctas {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
-.hr-locale {
-  margin: 0 0 -8px;
-}
 
-/* short landscape screens: keep the payoff inside the bands */
+/* shorter landscape screens (small laptops): a smaller h1 so the column fits */
 @media (min-aspect-ratio: 1/1) and (max-height: 760px) {
   .hr-title {
-    font-size: clamp(2.8rem, 11vh, 6.2rem);
+    font-size: clamp(2.8rem, 10.5vh, 6rem);
   }
-  .hr-payoff-inner {
+  .hr-intro-inner {
     gap: 20px;
+  }
+  .hr-intro-head {
+    gap: 16px;
   }
 }
 
-/* portrait (phones, tablets upright): intro in the top band, payoff in the
-   bottom band, each on a smoked-acrylic plate; the sign sits between them */
+/* short landscape (a phone sideways after "Continue anyway", 200% zoom on a
+   laptop): eyebrow, h1 and the hint only — the manifesto is in the copy layer */
+@media (orientation: landscape) and (max-height: 500px) {
+  .hr-intro {
+    width: min(440px, 46vw);
+  }
+  .hr-intro-inner {
+    gap: 12px;
+  }
+  .hr-intro-head {
+    gap: 10px;
+  }
+  .hr-title {
+    font-size: clamp(1.9rem, 9.6vh, 2.9rem);
+  }
+  .hr-manifesto {
+    display: none;
+  }
+  .hr-eyebrow,
+  .hr-locale {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    gap: 10px;
+  }
+  .hr-payoff {
+    width: min(460px, 50vw);
+  }
+  .hr-payoff-inner {
+    gap: 14px;
+  }
+  .hr-intro-inner::before,
+  .hr-payoff-inner::before {
+    left: -60px;
+    top: -40px;
+    bottom: -40px;
+  }
+}
+
+/* portrait (phones, tablets upright): each block on a smoked-acrylic plate —
+   the title plate in the top band, the manifesto plate and the payoff plate
+   in the bottom band; the sign sits between */
 @media (max-aspect-ratio: 1/1) {
   .hr-intro {
     right: var(--gutter);
-    max-width: 560px;
-    padding: 16px 18px 14px;
+    width: auto;
+    justify-content: stretch;
+  }
+  .hr-intro-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .hr-intro-inner::before,
+  .hr-payoff-inner::before {
+    display: none;
+  }
+  .hr-intro-head,
+  .hr-intro-foot,
+  .hr-payoff-inner {
+    max-width: 620px;
+    padding: 16px 18px;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 14px;
+  }
+  .hr-intro-head {
+    gap: 12px;
+  }
+  .hr-intro-foot {
     gap: 10px;
   }
-  .hr-intro::before {
-    display: none;
+  .hr-title {
+    font-size: clamp(2.4rem, 10.6vw, 5.4rem);
   }
   .hr-payoff {
     top: auto;
     right: var(--gutter);
     width: auto;
-    max-width: 620px;
     display: block;
   }
   .hr-payoff-inner {
-    padding: 18px 20px 18px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    gap: 16px;
-  }
-  .hr-payoff-inner::before {
-    display: none;
-  }
-  .hr-title {
-    font-size: clamp(2.6rem, 11.5vw, 5.6rem);
+    gap: 14px;
   }
 }
 @media (max-aspect-ratio: 1/1) and (max-width: 420px) {
-  .hr-intro .hud-body {
+  /* the eyebrow and the locale line each fit one line on a phone */
+  .hr-eyebrow,
+  .hr-locale {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    gap: 10px;
+  }
+  .hr-locale::before {
+    display: none;
+  }
+  .hr-manifesto {
     font-size: 14.5px;
     line-height: 1.5;
   }
 }
 @media (max-aspect-ratio: 1/1) and (max-height: 700px) {
-  .hr-intro {
+  .hr-intro-head,
+  .hr-intro-foot,
+  .hr-payoff-inner {
     padding: 12px 14px;
+  }
+  .hr-intro-head {
     gap: 8px;
   }
-  .hr-intro .hud-body {
+  .hr-manifesto {
     font-size: 13.5px;
   }
   .hr-title {
-    font-size: 2.35rem;
+    font-size: 2.3rem;
   }
   .hr-payoff-inner {
-    padding: 14px 16px;
     gap: 12px;
   }
 }

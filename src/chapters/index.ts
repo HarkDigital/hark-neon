@@ -13,11 +13,11 @@ import type { ChapterDef } from '../core/types'
  * shared with src/core/srContent.ts and the chrome's business names.
  */
 export const CHAPTERS: ChapterDef[] = [
-  { id: 'hero', label: 'Lights On', length: 2.6, landing: 0, intro: 0.8, load: () => import('./hero/index') },
-  { id: 'work', label: 'The Sign Wall', length: 3.8, landing: 0.12, intro: 0.06, load: () => import('./work/index') },
-  { id: 'services', label: 'Tube Chart', length: 4.0, landing: 0.08, intro: 0.06, load: () => import('./services/index') },
-  { id: 'voices', label: 'Word of Mouth', length: 3.2, landing: 0.06, intro: 0.06, load: () => import('./voices/index') },
+  { id: 'hero', label: 'Lights On', length: 2.6, landing: 0, intro: 0, load: () => import('./hero/index') },
+  { id: 'work', label: 'The Sign Wall', length: 4.3, landing: 0.08, intro: 0.08, load: () => import('./work/index') },
+  { id: 'services', label: 'Tube Chart', length: 4.4, landing: 0.1, intro: 0.08, load: () => import('./services/index') },
+  { id: 'voices', label: 'Word of Mouth', length: 3.6, landing: 0.1, intro: 0.1, load: () => import('./voices/index') },
   { id: 'shield', label: 'Short Circuit', length: 1.8, landing: 0.45, intro: 0.45, load: () => import('./shield/index') },
-  { id: 'process', label: 'The Bench', length: 2.2, landing: 0.17, intro: 0.12, load: () => import('./process/index') },
+  { id: 'process', label: 'The Bench', length: 2.2, landing: 0.2, intro: 0.1, load: () => import('./process/index') },
   { id: 'contact', label: 'The Front Door', length: 1.5, landing: 0.3, intro: 0.3, load: () => import('./contact/index') },
 ]

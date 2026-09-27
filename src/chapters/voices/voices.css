@@ -99,6 +99,13 @@
   text-wrap: pretty;
   text-shadow: none;
 }
+/* no backdrop blur behind the quote panels (a full-width blur is a GPU pass
+   every frame): a deeper plate reads the same over the dark window */
+.vc-panel .vc-fig.hud-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(8, 6, 12, 0.86);
+}
 .vc-panel .vc-fig.hud-panel::before {
   background: #fff;
   box-shadow:
@@ -107,20 +114,40 @@
     0 0 26px var(--vc-c, #ff2e97);
 }
 
+/* ---------------- short landscape (phones sideways, 200% zoom): the quote
+   docked right, the bubble framed in the room to its left ---------------- */
+.vc-panel.vc-side .vc-fig {
+  left: auto;
+  right: var(--gutter);
+  top: calc(50% + (var(--safe-top) - var(--safe-bottom)) / 2);
+  bottom: auto;
+  width: min(50vw, 440px);
+  max-width: none;
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
+  margin: 0;
+  transform: translateY(-50%);
+  gap: 8px;
+  padding: 14px 16px 13px;
+}
+.vc-panel.vc-side .vc-q {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
 /* on phones the intro sits over the scene: give it a readable plate */
 @media (max-width: 760px) {
   .vc-intro {
     right: var(--gutter);
     max-width: none;
     padding: 16px 18px;
-    background: var(--panel);
+    background: rgba(8, 6, 12, 0.86);
     border: 1px solid var(--line);
     border-radius: 14px;
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
   }
-}
-.lowfx .vc-intro {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  .vc-side .vc-intro {
+    right: auto;
+    max-width: min(420px, calc(100vw - 2 * var(--gutter)));
+    padding: 12px 16px;
+    gap: 10px;
+  }
 }

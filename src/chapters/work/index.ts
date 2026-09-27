@@ -5,9 +5,9 @@ import { el, rise, setRise, reveal } from '../../core/dom'
 import { SECTIONS, WORK, workImage } from '../../content'
 import { clamp, ease, lerp, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
-import { beat } from '../common'
 import { loadScreenshot, placeholderTexture, whenRevealed } from '../../kit/images'
 import { blockoutMaterial, NeonPart, neonFromStrokes, neonSpill, Striker, TUBE, type TubeColor } from '../../kit/neon'
+import { StoryClock } from '../../kit/pace'
 import { textStrokes, type Stroke } from '../../kit/type'
 import { backerPanel, brickMaterial, concreteMaterial, initAreaLights } from '../../kit/shop'
 import './work.css'
@@ -20,13 +20,21 @@ import './work.css'
  * in tube lettering above it. The camera trucks along the wall; each sign
  * strikes on as it arrives (its name writes itself) and cuts out as you
  * leave. At the end of the wall, the pickup board: the nine other sites
- * bent in amber under a pink "ready for pickup", then the camera pulls
- * back along the whole wall, every frame lit, into the cut.
+ * bent in amber under a pink "ready for pickup" (a pink plate lights round
+ * the name you're on), then the camera pulls back along the whole wall, every
+ * frame lit, into the cut.
  *
- * Everything derives from `local`; Strikers are the only time-based state
- * (they settle in < 0.5 s). Lights: 5 RectAreaLights, count fixed; the two
- * wall halos and two floor washes alternate between even and odd signs and
- * move with the camera.
+ * PACING (WCAG 2.3.1): the camera and the lit sign follow a StoryClock, not
+ * the raw scroll. The clock runs on a warped copy of `local` in which every
+ * sign-to-sign travel is one unit and a hold a little over half one, and it
+ * moves at most RATE units a second: a travel takes ≥ 0.55 s and a new sign
+ * lights at most ~1.2 times a second however fast the page moves. A fast
+ * scroll becomes a brisk walk down the wall; teleports (nav jumps, anchors,
+ * screenshots) snap. Strikers settle in < 0.5 s.
+ *
+ * Lights: 2 RectAreaLights, count fixed: a wall halo on the nearest even
+ * station and one on the nearest odd (the pickup board is station 7). The
+ * floor pools under the signs are additive planes.
  */
 const FEATURED = WORK.filter(w => w.featured)
 const REST = WORK.filter(w => !w.featured)
@@ -51,6 +59,8 @@ const FR_Z = 0.1
 const SIGN_Y = 1.72
 const BOARD_X = N * SP + 0.9
 const FACE_MAX = 0.85 // screenshots stay under the bloom threshold
+/** while the story clock catches up with a fast scroll the lit sign burns lower (smaller swings) */
+const CATCH_LEVEL = 0.7
 
 /** each sign's tube colour (no two neighbours alike) and its lettering */
 const SPECS: { color: TubeColor; font: 'script' | 'sans'; dy: number }[] = [
@@ -78,17 +88,65 @@ const hdrFor = (c: TubeColor, lum: number) => Math.min(lum / (CORE[c] ?? 0.5), (
 const FRAME_LUM = 1.42
 const NAME_LUM = 1.66
 
-// ---- the story schedule (local 0..1)
-const A = 0.1
-const E = 0.84
-const SPAN = (E - A) / N
-const T = 0.027 // half a travel between two signs
+// ---- the story schedule. Written in viewport heights of scroll so every beat
+// keeps its reading distance whatever the chapter's length: LEN must match
+// this chapter's `length` in src/chapters/index.ts.
+const LEN = 4.3
+const V = (vh: number) => vh / LEN
+/** the headline strikes on as the cut clears (the cut covers ~0.18 vh)… */
+const RISE = V(0.1)
+/** …and holds, settled, until here (≥ 0.4 vh of reading) */
+const INTRO_OUT = V(0.6)
+/** sign 1 settled */
+const A = V(0.78)
+/** one sign: its hold + one travel */
+const SPAN = V(0.46)
+/** half a travel between two signs */
+const T = V(0.09)
 /** travel k runs from station k to k+1; stations: 0 intro, 1..N signs, N+1 the pickup board */
-const TRAVEL: [number, number][] = [[0.08, 0.108]]
+const TRAVEL: [number, number][] = [[INTRO_OUT, A]]
 for (let i = 1; i < N; i++) TRAVEL.push([A + SPAN * i - T, A + SPAN * i + T])
-TRAVEL.push([0.832, 0.858])
+const E = A + SPAN * N
+TRAVEL.push([E - T, E + T])
 const BOARD = N + 1
-const OUTRO = 0.935
+/** the pickup board's nine names: one keyboard stop (and lit plate) each */
+const SLOT0 = E + T + V(0.03)
+const SLOT = V(0.04)
+const OUTRO = SLOT0 + SLOT * REST.length + V(0.04)
+/** each sign's settled hold (anchors land mid-hold) */
+const holdMid = (i: number) => ((i === 0 ? A : TRAVEL[i][1]) + TRAVEL[i + 1][0]) / 2
+
+/*
+ * The story clock's warp: a travel weighs 1 unit (travel 0 into the first
+ * sign a little more, it swings the view round), a hold HOLD_W, the board
+ * and the pull-back about one each. At RATE units/s a travel takes ≥ 0.55 s
+ * and a sign cycle (hold + travel) ≥ 0.86 s: ≤ 1.2 new signs a second.
+ */
+const HOLD_W = 0.55
+const RATE = 1.8
+const WB: number[] = [0]
+const WW: number[] = []
+TRAVEL.forEach(([s, e], k) => {
+  WB.push(s, e)
+  WW.push(k === 0 ? 0.45 : HOLD_W, k === 0 ? 1.2 : 1)
+})
+WB.push(OUTRO, 1)
+WW.push(1.1, 0.8)
+const WU = WW.reduce((acc, w) => (acc.push(acc[acc.length - 1] + w), acc), [0])
+/** local → clock units */
+function warp(local: number) {
+  const l = clamp(local)
+  let i = 0
+  while (i < WW.length - 1 && l >= WB[i + 1]) i++
+  return WU[i] + (WW[i] * (l - WB[i])) / Math.max(1e-6, WB[i + 1] - WB[i])
+}
+/** clock units → local */
+function unwarp(u: number) {
+  const v = clamp(u, 0, WU[WU.length - 1])
+  let i = 0
+  while (i < WW.length - 1 && v >= WU[i + 1]) i++
+  return WB[i] + ((WB[i + 1] - WB[i]) * (v - WU[i])) / WW[i]
+}
 
 /** where the story is: station k, travel progress t (0 = holding), hold progress h */
 function where(local: number) {
@@ -112,7 +170,7 @@ function holdVis(local: number, k: number) {
   const inT = TRAVEL[k - 1]
   const outT = TRAVEL[k] as [number, number] | undefined
   const tin = clamp((local - inT[0]) / (inT[1] - inT[0]))
-  const tout = outT ? clamp((local - outT[0]) / (outT[1] - outT[0])) : clamp((local - OUTRO + 0.004) / 0.03)
+  const tout = outT ? clamp((local - outT[0]) / (outT[1] - outT[0])) : clamp((local - OUTRO + V(0.02)) / V(0.12))
   return smoothstep(0.7, 0.93, tin) * (1 - smoothstep(0.07, 0.3, tout))
 }
 
@@ -199,9 +257,53 @@ function ribbonPart(strokes: Stroke[], color: TubeColor, radius: number, hdr: nu
 }
 
 /**
+ * A sign's light pooled on the glossy floor under it: one soft additive
+ * plane (brightest at the wall, fading out into the room) instead of a
+ * RectAreaLight per pool (each light costs every lit pixel of the brick and
+ * concrete). All pools share one tiny gradient canvas.
+ */
+let poolTex: THREE.CanvasTexture | null = null
+function floorPool(color: string, w: number, d: number) {
+  if (!poolTex) {
+    const c = document.createElement('canvas')
+    c.width = 32
+    c.height = 64
+    const g = c.getContext('2d')!
+    const img = g.createImageData(c.width, c.height)
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        const u = ((x + 0.5) / c.width) * 2 - 1
+        const v = (y + 0.5) / c.height // 0 at the wall (canvas top = uv v 1)
+        const a = Math.exp(-u * u * 3.4) * Math.pow(1 - v, 1.7) * smoothstep(0, 0.08, v)
+        const k = (y * c.width + x) * 4
+        img.data[k] = img.data[k + 1] = img.data[k + 2] = 255
+        img.data[k + 3] = Math.round(a * 255)
+      }
+    }
+    g.putImageData(img, 0, 0)
+    poolTex = new THREE.CanvasTexture(c)
+  }
+  const m = new THREE.MeshBasicMaterial({
+    map: poolTex,
+    color,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  })
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m)
+  // lying on the floor, its top edge (uv v = 1) against the wall
+  mesh.rotation.x = -Math.PI / 2
+  mesh.renderOrder = 1
+  return { mesh, setLevel: (v: number, strength: number) => (m.opacity = v * strength) }
+}
+
+/**
  * Six pickup tickets in one small canvas (decorative job tickets: "PICKUP",
- * a job number, a READY stamp). Bound blank at init; draw() fills it once
- * the mono face has loaded.
+ * a job number, a READY stamp). A pre-launch preview (harktest.com) isn't
+ * ready for pickup: its ticket is a PROOF stamped PREVIEW. Bound blank at
+ * init; draw() fills it once the mono face has loaded.
  */
 function ticketAtlas() {
   const W = 128
@@ -240,10 +342,11 @@ function ticketAtlas() {
         g.beginPath()
         g.arc(x + W / 2, 18, 4.5, 0, Math.PI * 2)
         g.fill()
+        const preview = isPreview(FEATURED[i].url)
         g.fillStyle = '#2a2320'
         g.textAlign = 'center'
         g.font = `700 17px ${mono}`
-        g.fillText('PICKUP', x + W / 2, 52)
+        g.fillText(preview ? 'PROOF' : 'PICKUP', x + W / 2, 52)
         g.fillRect(x + 14, 60, W - 28, 2)
         g.font = `500 11px ${mono}`
         g.fillText('JOB', x + W / 2, 82)
@@ -254,12 +357,14 @@ function ticketAtlas() {
         g.save()
         g.translate(x + W / 2, 152)
         g.rotate(-0.2 + 0.07 * (i % 3))
-        g.strokeStyle = 'rgba(24, 30, 72, 0.88)'
+        // READY in blue ink; a preview's PREVIEW in red (not for pickup yet)
+        const ink = preview ? 'rgba(128, 22, 30, 0.9)' : 'rgba(24, 30, 72, 0.88)'
+        g.strokeStyle = ink
         g.lineWidth = 3
-        g.strokeRect(-44, -17, 88, 32)
-        g.fillStyle = 'rgba(24, 30, 72, 0.88)'
-        g.font = `800 20px ${mono}`
-        g.fillText('READY', 0, 7)
+        g.strokeRect(preview ? -50 : -44, -17, preview ? 100 : 88, 32)
+        g.fillStyle = ink
+        g.font = `800 ${preview ? 16 : 20}px ${mono}`
+        g.fillText(preview ? 'PREVIEW' : 'READY', 0, preview ? 6 : 7)
         g.restore()
       }
       texture.needsUpdate = true
@@ -279,6 +384,7 @@ interface Sign {
   name: Tube
   face: THREE.MeshBasicMaterial
   faceS: Striker
+  pool: ReturnType<typeof floorPool>
   /** framing box (world): centre + size */
   box: { cx: number; cy: number; w: number; h: number }
 }
@@ -323,16 +429,32 @@ export default function create(): Chapter {
     frame: null as Tube | null,
     head: null as Tube | null,
     list: null as Tube | null,
+    /** the nine names, one part each (the one you're on burns hotter) */
+    names: [] as NeonPart[],
+    /** 0..1 how lit each name's highlight is (time-damped) */
+    hl: REST.map(() => 0),
+    /** a pink plate round each name (lit round the one you're on) */
+    plates: [] as NeonPart[],
+    listSpill: null as { setLevel(v: number): void } | null,
     box: { cx: BOARD_X, cy: 2.1, w: 3.4, h: 4 },
   }
-  // lights (count fixed: 5)
-  let haloE: THREE.RectAreaLight, haloO: THREE.RectAreaLight, floorE: THREE.RectAreaLight, floorO: THREE.RectAreaLight, haloB: THREE.RectAreaLight
+  const NAME_HDR = hdrFor('amber', BLOOM_T * 0.97)
+  // just over the threshold: a warm glow, not a bloom (thin ribbons bloom into blotches on phones)
+  const NAME_HDR_ON = hdrFor('amber', BLOOM_T * 1.1)
+  // lights (count fixed: 2): a wall halo on the nearest even station, one on the nearest odd
+  let haloE: THREE.RectAreaLight, haloO: THREE.RectAreaLight
+  const boardHalo = new THREE.Color(TUBE.pink).lerp(new THREE.Color(TUBE.amber), 0.5)
   let intro: HTMLElement, introTitle: HTMLElement
   let card: HTMLElement, meta: HTMLElement, name: HTMLElement, blurb: HTMLElement, tags: HTMLElement, visit: HTMLAnchorElement
   let rest: HTMLElement
+  const restItems: HTMLElement[] = []
   let shown = -1
+  let restOn = -1
   /** a strike or a lightbox fade is still ramping (keeps the Motion-off heartbeat awake) */
   let settling = false
+  /** the time-paced story (see PACING above); q = the paced local everything reads */
+  const clock = new StoryClock({ rate: RATE, snap: 1.5 })
+  let q = NaN
   let cardW = 400
   let cardH = 290
   let restW = 400
@@ -362,14 +484,16 @@ export default function create(): Chapter {
     poses.key = key
     const aspect = W / H
     const gutter = clamp(W * 0.034, 16, 48)
-    const safeTop = clamp(H * 0.105, 80, 112)
-    const safeBot = clamp(H * 0.105, 82, 110)
+    // the chrome bands (base.css --safe-top/--safe-bottom; short landscape shrinks them)
+    const short = !portrait && H <= 500
+    const safeTop = short ? 52 : clamp(H * 0.105, 80, 112)
+    const safeBot = short ? 52 : clamp(H * 0.105, 82, 110)
     const nx = (px: number) => (px / W) * 2 - 1
     const ny = (py: number) => 1 - (py / H) * 2
     const region = (pw: number, ph: number) =>
       portrait
         ? [nx(gutter + 4), ny(H - safeBot - ph - 20), nx(W - gutter - 4), ny(safeTop + 8)]
-        : [nx(gutter + pw + 70), ny(H - safeBot - 30), nx(W - gutter - 100), ny(safeTop + 20)]
+        : [nx(gutter + pw + (short ? 36 : 70)), ny(H - safeBot - (short ? 8 : 30)), nx(W - gutter - (short ? 40 : 100)), ny(safeTop + (short ? 6 : 20))]
     const fov = portrait ? 40 : 36
     poses.fov = fov
     const rc = region(cardW, cardH)
@@ -438,8 +562,9 @@ export default function create(): Chapter {
   return {
     id: 'work',
     group,
-    // featured first, then the nine others (srContent / WORK order)
-    anchors: [...beat(0, N, A, E).centers, ...REST.map(() => 0.9)],
+    // featured first (mid-hold), then the nine others (srContent / WORK
+    // order), each its own slot on the pickup board (its plate lights)
+    anchors: [...FEATURED.map((_, i) => holdMid(i)), ...REST.map((_, j) => SLOT0 + (j + 0.5) * SLOT)],
     async init(ctx) {
       initAreaLights()
       const radial = ctx.mobile ? 6 : 8
@@ -497,7 +622,8 @@ export default function create(): Chapter {
         const cap = Math.min(spec.font === 'script' ? 0.27 : 0.21, (FR_W * 0.94) / probe.width)
         const txt = textStrokes(w.name, { font: spec.font, size: cap, tracking: spec.font === 'sans' ? 0.06 : 0 })
         const ny = FR_H / 2 + 0.2 + cap * (spec.font === 'script' ? 0.85 : 0.6)
-        const nm = neonFromStrokes(txt.strokes, { color: spec.color, radius: cap / 30, hdr: hdrFor(spec.color, NAME_LUM), radial })
+        // small lettering: no sphere caps (they sparkle as dots through bloom), 6 sides (sub-pixel)
+        const nm = neonFromStrokes(txt.strokes, { color: spec.color, radius: cap / 30, hdr: hdrFor(spec.color, NAME_LUM), radial: 6, caps: false })
         nm.group.position.set(0, ny, 0.075)
         g.add(nm.group)
         const nsp = neonSpill(txt.strokes, { color: spec.color, width: txt.width + 0.9, height: cap * 2.6 + 0.7, blur: 0.09, strength: 0.32 })
@@ -505,6 +631,10 @@ export default function create(): Chapter {
         ;(nsp.material as THREE.MeshBasicMaterial).fog = false
         g.add(nsp)
         nm.follow(nsp)
+        // its light pooled on the floor below
+        const pool = floorPool(TUBE[spec.color], FR_W * 1.05, 2.6)
+        pool.mesh.position.set(x, 0.004, 0.05 + 1.3)
+        group.add(pool.mesh)
         // a paper pickup ticket on a string from the frame's lower left (merged below)
         {
           const tw = 0.2
@@ -559,6 +689,7 @@ export default function create(): Chapter {
           name: tube(nm, new Striker({ stutters: 0, ramp: 0.18 })),
           face: faceMat,
           faceS: new Striker({ stutters: 0, ramp: 0.35, off: 0.3 }),
+          pool,
           box: {
             cx: x,
             cy: y + (ny + cap * 0.75 - FR_H / 2) / 2,
@@ -582,7 +713,7 @@ export default function create(): Chapter {
         group.add(bg)
         bg.add(backerPanel(bw, bh, { material: new THREE.MeshStandardMaterial({ color: 0x060508, roughness: 0.3, metalness: 0, envMapIntensity: 0.25 }) }))
         const headY = bh / 2 - 0.3 - HC * 0.75
-        const hp = neonFromStrokes(head.strokes, { color: 'pink', radius: HC / 28, hdr: hdrFor('pink', NAME_LUM), radial })
+        const hp = neonFromStrokes(head.strokes, { color: 'pink', radius: HC / 28, hdr: hdrFor('pink', NAME_LUM), radial, caps: false })
         hp.group.position.set(0, headY, 0.045)
         bg.add(hp.group)
         const hsp = neonSpill(head.strokes, { color: 'pink', width: head.width + 0.8, height: 1.1, blur: 0.09, strength: 0.35 })
@@ -595,14 +726,44 @@ export default function create(): Chapter {
         // scratches across the names at this size), just under the bloom threshold
         // (thin tubes on phones bloomed only at their end caps: a rash of dots).
         // The spill behind is the glow.
-        const lp = ribbonPart(list.strokes, 'amber', 0.118 / 26, hdrFor('amber', BLOOM_T * 0.97))
-        lp.group.position.set(0, listY, 0.04)
-        bg.add(lp.group)
+        // One ribbon per name (its own level/hdr: the name you're on burns
+        // over the threshold); the strokes sorted to the nearest line.
+        const perLine: Stroke[][] = REST.map(() => [])
+        for (const st of list.strokes) {
+          let y = 0
+          for (const p of st.pts) y += p.y
+          y /= st.pts.length
+          let best = 0
+          list.lines.forEach((ln, j) => {
+            if (Math.abs(ln.y - y) < Math.abs(list.lines[best].y - y)) best = j
+          })
+          perLine[best].push(st)
+        }
+        board.names = perLine.map(strokes => {
+          const part = ribbonPart(strokes, 'amber', 0.118 / 26, NAME_HDR)
+          part.group.position.set(0, listY, 0.04)
+          bg.add(part.group)
+          return part
+        })
         const lsp = neonSpill(list.strokes, { color: 'amber', width: list.width + 0.6, height: list.height + 0.6, blur: 0.06, strength: 0.34 })
         lsp.position.set(0, listY, 0.002)
         ;(lsp.material as THREE.MeshBasicMaterial).fog = false
         bg.add(lsp)
-        lp.follow(lsp)
+        // the list's own Striker drives every name and the spill (update())
+        board.listSpill = lsp
+        const lp = board.names[0]
+        // a pink plate round each name: the one you're on lights up (a flat
+        // ribbon like the names: a round tube would cost ~5k triangles a plate)
+        board.plates = list.lines.map(ln => {
+          const w = ln.maxX - ln.minX + 0.16
+          const plate = ribbonPart([roundRect(w, 0.118 * 1.95, 0.075, 0, 0.04)], 'pink', 0.0055, hdrFor('pink', NAME_LUM))
+          plate.group.position.set((ln.minX + ln.maxX) / 2, listY + ln.y, 0.046)
+          // the plate exists only as far as it's lit: it bends itself round the name
+          plate.setHideUndrawn(true)
+          plate.setDraw(0)
+          bg.add(plate.group)
+          return plate
+        })
         // the board's frame on the wall around it
         const bfs = roundRect(bw + 0.3, bh + 0.3, 0.18, 0.09)
         const bf = neonFromStrokes([bfs], { color: 'blue', radius: 0.016, hdr: hdrFor('blue', FRAME_LUM), smooth: false, radial })
@@ -628,6 +789,7 @@ export default function create(): Chapter {
         cg.deleteAttribute('uv')
         cords.push(cg)
       }
+      await nextFrame()
       const ticketTex = ticketAtlas()
       const tk = new THREE.Mesh(mergeGeometries(tickets, false)!, new THREE.MeshStandardMaterial({ map: ticketTex.texture, roughness: 0.92, metalness: 0, side: THREE.DoubleSide }))
       group.add(tk)
@@ -642,20 +804,14 @@ export default function create(): Chapter {
       hardware.forEach(g => g.dispose())
       cords.forEach(g => g.dispose())
 
-      // ---- lights: two wall halos + two floor washes that alternate even/odd signs, one for the board
-      const mk = (w: number, h: number) => {
-        const l = new THREE.RectAreaLight(0xffffff, 0, w, h)
+      // ---- lights (2, fixed): wall halos on the nearest even and odd stations
+      const mk = () => {
+        const l = new THREE.RectAreaLight(0xffffff, 0, FR_W, FR_H)
         group.add(l)
         return l
       }
-      haloE = mk(FR_W, FR_H)
-      haloO = mk(FR_W, FR_H)
-      floorE = mk(FR_W * 0.9, 0.08)
-      floorO = mk(FR_W * 0.9, 0.08)
-      haloB = mk(board.box.w * 0.7, board.box.h * 0.7)
-      haloB.color.set(TUBE.pink).lerp(new THREE.Color(TUBE.amber), 0.5)
-      haloB.position.set(BOARD_X, board.box.cy, 0.035)
-      haloB.lookAt(BOARD_X, board.box.cy, -1)
+      haloE = mk()
+      haloO = mk()
 
       // ---- copy
       intro = el('div', 'wk-intro', undefined, ctx.stage)
@@ -673,7 +829,9 @@ export default function create(): Chapter {
       el('h3', 'wk-name wk-rest-title', 'Nine more, all live.', rest)
       const list = el('ul', 'wk-list', undefined, rest)
       for (const w of REST) {
-        const a = el('a', '', w.name, el('li', '', undefined, list))
+        const li = el('li', '', undefined, list)
+        restItems.push(li)
+        const a = el('a', '', w.name, li)
         el('span', 'wk-arrow', ' ↗', a).setAttribute('aria-hidden', 'true')
         a.href = w.url
         a.target = '_blank'
@@ -715,9 +873,11 @@ export default function create(): Chapter {
         for (let i = 1; i < N; i++) await load(i)
       })
     },
-    busy: () => settling,
+    busy: () => settling || clock.busy,
     onEnter() {
-      // strike fresh on every entry (the cut is lights-out / strike)
+      // strike fresh on every entry (the cut is lights-out / strike), and let
+      // the story clock snap to wherever the scroll entered
+      clock.reset()
       for (const s of signs) {
         s.frame.s.set(0)
         s.name.s.set(0)
@@ -726,15 +886,23 @@ export default function create(): Chapter {
     },
     update(local, frame, ctx) {
       const dt = frame.dt
-      const calm = ctx.reducedMotion || !!frame.still || Math.abs(frame.velocity) > 2.5
+      // the paced story: everything below (and the camera) reads q, not local
+      const uT = warp(local)
+      const uC = clock.update(uT, dt)
+      q = unwarp(uC)
+      // still catching up with a fast scroll: a steady walk down the wall
+      // (strikes ramp, never stutter; the frames burn a little lower)
+      const catching = Math.abs(uT - uC) > 0.35
+      const calm = ctx.reducedMotion || !!frame.still || Math.abs(frame.velocity) > 2.5 || catching
       const quiet = ctx.reducedMotion || !!frame.still
-      const outro = local >= OUTRO
-      const w = where(local)
+      const outro = q >= OUTRO
+      const w = where(q)
       const track = w.k + ease.inOutCubic(w.t) // 0 intro, 1..N signs, N+1 board
       settling = false
       const mid = (v: number) => {
         if (v > 0.002 && v < 0.998) settling = true
       }
+      const drive = catching ? CATCH_LEVEL : 1
 
       for (let i = 0; i < N; i++) {
         const s = signs[i]
@@ -744,55 +912,92 @@ export default function create(): Chapter {
         const outT = TRAVEL[k]
         const strikeAt = i === 0 ? -1 : lerp(inT[0], inT[1], 0.55)
         const cutAt = lerp(outT[0], outT[1], 0.35)
-        const on = (local >= strikeAt && local < cutAt) || outro
-        const fl0 = s.frame.s.update(on, dt, calm)
-        const nl0 = s.name.s.update(on, dt, calm)
+        const on = (q >= strikeAt && q < cutAt) || outro
+        const fl0 = s.frame.s.update(on ? drive : 0, dt, calm)
+        const nl0 = s.name.s.update(on ? drive : 0, dt, calm)
         s.frame.part.setLevel(fl0)
         s.name.part.setLevel(nl0)
         mid(fl0)
         mid(nl0)
-        // the name writes itself as the camera arrives (sign 0: during the intro)
-        const draw = i === 0 ? smoothstep(0.036, 0.06, local) : smoothstep(lerp(inT[0], inT[1], 0.5), inT[1], local)
+        s.pool.setLevel(fl0, s.color === 'white' ? 0.3 : 0.42)
+        // the name writes itself as the camera arrives (sign 1: as the cut clears)
+        const draw = i === 0 ? smoothstep(V(0.12), V(0.3), q) : smoothstep(lerp(inT[0], inT[1], 0.5), inT[1], q)
         s.name.part.setDraw(quiet || outro ? 1 : draw)
         // the lightbox: backlit when its sign is up, dim otherwise
-        const f = s.faceS.update(on ? 1 : 0.3, dt, true)
+        const ft = on ? drive : 0.3
+        const f = s.faceS.update(ft, dt, true)
         s.face.color.setScalar(FACE_MAX * f)
-        if (Math.abs(f - (on ? 1 : 0.3)) > 0.002) settling = true
+        if (Math.abs(f - ft) > 0.002) settling = true
       }
-      const boardOn = local >= lerp(TRAVEL[N][0], TRAVEL[N][1], 0.45)
+      const boardOn = q >= lerp(TRAVEL[N][0], TRAVEL[N][1], 0.45)
       if (board.frame && board.head && board.list) {
+        let ll = 0
         for (const t of [board.frame, board.head, board.list]) {
           const lv = t.s.update(boardOn, dt, calm)
           t.part.setLevel(lv)
           mid(lv)
+          if (t === board.list) ll = lv
         }
-        board.list.part.setDraw(quiet ? 1 : smoothstep(lerp(TRAVEL[N][0], TRAVEL[N][1], 0.5), TRAVEL[N][1] + 0.022, local))
-        haloB.intensity = board.head.part.level * 3
+        board.listSpill?.setLevel(ll)
+        // the names write themselves in, top to bottom, as the camera arrives
+        const d0 = lerp(TRAVEL[N][0], TRAVEL[N][1], 0.5)
+        // the name you're on (keyboard stop / scroll slot) burns hotter; not while catching up
+        const inSlot = w.k === BOARD && !outro && !catching && q >= SLOT0 && q < SLOT0 + SLOT * REST.length
+        const on = inSlot ? Math.min(REST.length - 1, Math.floor((q - SLOT0) / SLOT)) : -1
+        const kHl = 1 - Math.exp(-dt / 0.09)
+        let focus = 0
+        for (let j = 0; j < REST.length; j++) {
+          const tgt = j === on ? 1 : 0
+          const h = (board.hl[j] += (tgt - board.hl[j]) * kHl)
+          if (Math.abs(tgt - h) > 0.002) settling = true
+          focus += h
+        }
+        focus = clamp(focus)
+        board.names.forEach((part, j) => {
+          const h = board.hl[j]
+          // the name you're on burns hotter; the rest step back a little
+          part.setLevel(ll * lerp(1 - 0.38 * focus, 1, h))
+          part.setHdr(lerp(NAME_HDR, NAME_HDR_ON, h))
+          part.setDraw(quiet ? 1 : smoothstep(d0 + j * V(0.008), d0 + j * V(0.008) + V(0.05), q))
+          board.plates[j]?.setLevel(ll)
+          board.plates[j]?.setDraw(h < 0.01 ? 0 : h)
+        })
+        if (on !== restOn) {
+          restOn = on
+          restItems.forEach((li, j) => li.classList.toggle('is-on', j === on))
+        }
       }
 
-      // halos + floor washes on the nearest even and odd signs
-      const si = clamp(track - 1, 0, N - 1)
-      const ie = clamp(2 * Math.round(si / 2), 0, N - 1)
-      const io = clamp(2 * Math.round((si - 1) / 2) + 1, 1, N - 1)
-      const place = (halo: THREE.RectAreaLight, fl: THREE.RectAreaLight, i: number) => {
-        const s = signs[i]
-        const c = TUBE[s.color]
-        halo.color.set(c)
-        fl.color.set(c)
+      // wall halos on the nearest even and odd stations (the board is station N+1)
+      const sk = clamp(track, 1, BOARD)
+      const ke = clamp(2 * Math.round(sk / 2), 2, BOARD - (BOARD % 2 ? 1 : 0))
+      const ko = clamp(2 * Math.round((sk - 1) / 2) + 1, 1, BOARD - (BOARD % 2 ? 0 : 1))
+      const place = (halo: THREE.RectAreaLight, k: number) => {
+        if (k === BOARD) {
+          // between the board's backer and the wall: a warm halo round its edge
+          halo.width = board.box.w * 0.7
+          halo.height = board.box.h * 0.7
+          halo.color.copy(boardHalo)
+          halo.position.set(BOARD_X, board.box.cy, 0.035)
+          halo.lookAt(BOARD_X, board.box.cy, -1)
+          halo.intensity = (board.head?.part.level ?? 0) * 3
+          return
+        }
+        const s = signs[k - 1]
+        halo.width = FR_W
+        halo.height = FR_H
+        halo.color.set(TUBE[s.color])
         // off the wall in front of the sign, facing the brick (no shadows: it
         // lights the wall all round the lightbox, a colour halo on the bricks)
         halo.position.set(s.x, s.y + 0.1, 0.55)
         halo.lookAt(s.x, s.y + 0.1, -1)
-        fl.position.set(s.x, s.y - FR_H / 2 - 0.02, FR_Z + 0.03)
-        fl.lookAt(s.x, 0, 1.4)
-        const lv = s.frame.part.level
-        halo.intensity = lv * (s.color === 'white' ? 1.4 : 2.6)
-        fl.intensity = lv * (s.color === 'white' ? 3 : 5)
+        halo.intensity = s.frame.part.level * (s.color === 'white' ? 1.4 : 2.6)
       }
-      place(haloE, floorE, ie)
-      place(haloO, floorO, io)
+      place(haloE, ke)
+      place(haloO, ko)
 
-      // the room: haze tinted by whichever sign is up
+      // the room: haze tinted by whichever sign is up (the world eases the colour)
+      const si = clamp(track - 1, 0, N - 1)
       const ci = clamp(Math.round(si), 0, N - 1)
       const p = ctx.world.params
       p.glowColor = w.k === BOARD && !outro ? TUBE.amber : TUBE[signs[ci]?.color ?? 'pink']
@@ -807,11 +1012,11 @@ export default function create(): Chapter {
       ctx.post.params.bloomThreshold = BLOOM_T
 
       // ---- copy
-      reveal(intro, 1 - smoothstep(0.086, 0.1, local), 0)
-      setRise(introTitle, local > 0.03 && local < 0.098)
+      reveal(intro, 1 - smoothstep(INTRO_OUT + V(0.01), INTRO_OUT + V(0.07), q), 0)
+      setRise(introTitle, q > RISE && q < INTRO_OUT + V(0.07))
       const idx = clamp(Math.round(si), 0, N - 1)
-      reveal(card, holdVis(local, idx + 1), 0)
-      reveal(rest, holdVis(local, BOARD), 0)
+      reveal(card, holdVis(q, idx + 1), 0)
+      reveal(rest, holdVis(q, BOARD), 0)
       if (idx !== shown) {
         shown = idx
         const it = FEATURED[shown]
@@ -826,7 +1031,9 @@ export default function create(): Chapter {
     },
     camera(local, frame, out: CameraPose) {
       buildPoses(frame)
-      const w = where(local)
+      // the paced story (update ran first this frame); raw local before the first update
+      const at = Number.isFinite(q) ? q : local
+      const w = where(at)
       if (w.t > 0) {
         holdPose(tmpA, w.k, 1)
         holdPose(tmpB, w.k + 1, 0)
@@ -844,8 +1051,8 @@ export default function create(): Chapter {
         out.position.copy(tmpA.p)
         out.target.copy(tmpA.t)
       }
-      if (local > OUTRO) {
-        const o = ease.inOutCubic(clamp((local - OUTRO) / (1 - OUTRO)))
+      if (at > OUTRO) {
+        const o = ease.inOutCubic(clamp((at - OUTRO) / (1 - OUTRO)))
         out.position.lerp(poses.outro.p, o)
         out.target.lerp(poses.outro.t, o)
       }
