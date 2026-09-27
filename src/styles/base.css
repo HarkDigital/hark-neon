@@ -564,9 +564,6 @@ a {
     0 6px 20px rgba(0, 0, 0, 0.4);
   outline: none;
 }
-.sr-copy :is(a, button):focus .sr-note {
-  display: none;
-}
 .sr-copy :is(h1, h2):focus {
   position: fixed;
   left: 50%;

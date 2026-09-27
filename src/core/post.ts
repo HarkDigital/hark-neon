@@ -355,7 +355,12 @@ export class Post {
    * render doesn't block on synchronous links.
    */
   compileAsync(): Promise<unknown> {
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2))
+    // the same attribute set as FullScreenQuad (position + uv, no normal): a
+    // PlaneGeometry compiles a program variant that's never used
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3))
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2))
+    const quad = new THREE.Mesh(geo)
     const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
     const b = this.bloom as unknown as Record<string, unknown>
     const mats: THREE.Material[] = []
