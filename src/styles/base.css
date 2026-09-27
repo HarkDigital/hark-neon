@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-   Hark concept starter — base tokens, layout and the shared HUD vocabulary.
+   Hark NEON — base tokens, layout and the shared HUD vocabulary.
 
    Two parts:
    1. STRUCTURE (keep): #gl / #track / #stages / .stage / #chrome / #loader,
@@ -17,26 +17,37 @@
    ------------------------------------------------------------------ */
 
 :root {
-  /* THEME tokens */
-  --bg: #0d0f12;
-  --ink: #0d0f12;
-  --paper: #f4f2ee;
-  --paper-2: #f4f2ee;
-  /* THEME: the concept's accent. A neutral placeholder — not the old signal green, which
-     is not a Hark brand color (the brand is the monochrome mark). */
-  --signal: #d8dde6;
-  --signal-deep: #5b6270;
+  /* NEON tokens — a sign shop after hours. Text is white-hot tube core; the
+     colour lives in the glow. Pink leads, argon blue answers. No green. */
+  --bg: #050408;
+  --ink: #050408;
+  --paper: #fff6fb;
+  --paper-2: #fff6fb;
+  /* the house tube: rose-phosphor neon (5.9:1 on --bg, fine for small text) */
+  --signal: #ff2e97;
+  --signal-deep: #b3005f;
+  /* argon + blue phosphor (8.8:1 on --bg) */
+  --argon: #2cb4ff;
+  --neon-red: #ff4220;
+  --uv: #9b5cff;
+  --amber: #ffa126;
 
   --fg: var(--paper);
-  --fg-muted: rgba(244, 242, 238, 0.78);
-  --fg-faint: rgba(244, 242, 238, 0.64);
-  --line: rgba(244, 242, 238, 0.16);
-  --line-strong: rgba(244, 242, 238, 0.38);
-  --panel: rgba(13, 15, 18, 0.72);
+  --fg-muted: rgba(255, 246, 251, 0.8);
+  --fg-faint: rgba(255, 246, 251, 0.66);
+  --line: rgba(255, 246, 251, 0.14);
+  --line-strong: rgba(255, 246, 251, 0.4);
+  --panel: rgba(8, 6, 12, 0.76);
 
-  --font-display: 'Inter Variable', system-ui, sans-serif;
-  --font-sans: 'Inter Variable', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  /* glows (text-shadow stacks): a white core, then the gas colour */
+  --glow-pink: 0 0 1px rgba(255, 255, 255, 0.9), 0 0 6px rgba(255, 46, 151, 0.95), 0 0 16px rgba(255, 46, 151, 0.7), 0 0 40px rgba(255, 46, 151, 0.45);
+  --glow-blue: 0 0 1px rgba(255, 255, 255, 0.9), 0 0 6px rgba(44, 180, 255, 0.95), 0 0 16px rgba(44, 180, 255, 0.7), 0 0 40px rgba(44, 180, 255, 0.45);
+  --glow-white: 0 0 1px rgba(255, 255, 255, 0.8), 0 0 10px rgba(255, 214, 236, 0.45), 0 0 28px rgba(255, 110, 185, 0.28);
+  --glow-box-pink: 0 0 0 1px rgba(255, 190, 225, 0.5), 0 0 12px rgba(255, 46, 151, 0.6), 0 0 32px rgba(255, 46, 151, 0.28);
+
+  --font-display: 'Tilt Neon', 'Outfit Variable', system-ui, sans-serif;
+  --font-sans: 'Outfit Variable', system-ui, sans-serif;
+  --font-mono: 'Azeret Mono Variable', ui-monospace, monospace;
 
   /* STRUCTURE: the persistent chrome owns these bands (+ notch insets) */
   --gutter: max(clamp(16px, 3.4vw, 48px), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
@@ -206,82 +217,98 @@ a {
   outline-color: var(--paper-2);
 }
 
-/* ---------------- HUD vocabulary (THEME) ---------------- */
+/* ---------------- HUD vocabulary (THEME: NEON) ---------------- */
 
 .hud-label {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fg-muted);
   line-height: 1.5;
 }
 
+/* eyebrow: a short lit tube, then the label */
 .hud-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--fg);
   margin: 0;
 }
 .hud-eyebrow::before {
   content: '';
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--signal);
+  width: 22px;
+  height: 3px;
+  border-radius: 3px;
+  background: #ffd9ec;
+  box-shadow: var(--glow-box-pink);
 }
 
+/* display type is Tilt Neon (one weight: monoline tubes). The fill is the
+   white-hot core; the colour is the glow around it. */
 .hud-title {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 0.92;
-  font-size: clamp(3rem, 8vw, 8rem);
+  font-weight: 400;
+  font-synthesis: none;
+  letter-spacing: -0.01em;
+  line-height: 0.98;
+  font-size: clamp(3rem, 8.2vw, 8.2rem);
   margin: 0;
-  color: var(--fg);
+  color: var(--paper);
+  text-shadow: var(--glow-white);
   text-wrap: balance;
 }
 .hud-h2 {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 0.98;
-  font-size: clamp(2rem, 4.4vw, 4.2rem);
+  font-weight: 400;
+  font-synthesis: none;
+  letter-spacing: -0.005em;
+  line-height: 1.02;
+  font-size: clamp(2.1rem, 4.6vw, 4.4rem);
   margin: 0;
-  color: var(--fg);
+  color: var(--paper);
+  text-shadow: var(--glow-white);
   text-wrap: balance;
 }
-/* <em> = the accent word */
+/* <em> = the accent word: a pink tube (white-pink core, pink gas) */
 .hud-title em,
 .hud-h2 em {
   font-style: normal;
-  color: var(--signal);
+  color: #ffe3f1;
+  text-shadow: var(--glow-pink);
+}
+.hud-title em.is-blue,
+.hud-h2 em.is-blue {
+  color: #e2f5ff;
+  text-shadow: var(--glow-blue);
 }
 .is-light .hud-title em,
 .is-light .hud-h2 em {
   color: var(--signal-deep);
+  text-shadow: none;
 }
 
 .hud-body {
   font-family: var(--font-sans);
+  font-weight: 350;
   font-size: clamp(15px, 1.15vw, 17px);
-  line-height: 1.55;
+  line-height: 1.58;
   color: var(--fg-muted);
   max-width: 42ch;
   margin: 0;
 }
 
 .hud-quote {
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: clamp(1.4rem, 2.6vw, 2.4rem);
-  line-height: 1.18;
-  letter-spacing: -0.015em;
+  font-family: var(--font-sans);
+  font-weight: 360;
+  font-size: clamp(1.3rem, 2.3vw, 2.15rem);
+  line-height: 1.24;
+  letter-spacing: -0.01em;
   color: var(--fg);
   margin: 0;
   text-wrap: pretty;
@@ -295,17 +322,20 @@ a {
   padding: 0;
   list-style: none;
 }
+/* tags: little lengths of argon tube */
 .hud-tag {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fg);
-  padding: 4px 9px;
-  border: 1px solid var(--line-strong);
+  padding: 4px 10px;
+  border: 1px solid rgba(44, 180, 255, 0.6);
   border-radius: 999px;
+  box-shadow: 0 0 8px rgba(44, 180, 255, 0.25), inset 0 0 6px rgba(44, 180, 255, 0.15);
 }
 
+/* buttons: primary is a lit pink tube (ink text on pink, 5.9:1); ghost is a white outline tube */
 .hud-btn {
   display: inline-flex;
   align-items: center;
@@ -313,35 +343,57 @@ a {
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   text-decoration: none;
-  color: var(--bg);
+  color: var(--ink);
   background: var(--signal);
-  padding: 13px 20px;
+  padding: 13px 22px;
   border: 0;
   border-radius: 999px;
   cursor: pointer;
-  transition: transform 0.2s ease;
+  box-shadow: inset 0 0 0 1px rgba(255, 220, 238, 0.55), 0 0 14px rgba(255, 46, 151, 0.55), 0 0 36px rgba(255, 46, 151, 0.25);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .hud-btn:hover,
 .hud-btn:focus-visible {
   transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px rgba(255, 235, 245, 0.8), 0 0 18px rgba(255, 46, 151, 0.8), 0 0 48px rgba(255, 46, 151, 0.4);
 }
 .hud-btn--ghost {
-  background: transparent;
+  background: rgba(5, 4, 8, 0.55);
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 246, 251, 0.75), 0 0 12px rgba(255, 214, 236, 0.18);
+}
+.hud-btn--ghost:hover,
+.hud-btn--ghost:focus-visible {
+  box-shadow: inset 0 0 0 1.5px #fff, 0 0 16px rgba(255, 214, 236, 0.4);
 }
 
+/* panels: smoked acrylic with a lit tube along the top edge */
 .hud-panel {
   position: relative;
   padding: 20px 22px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
+}
+.hud-panel::before {
+  content: '';
+  position: absolute;
+  left: 22px;
+  top: -1.5px;
+  width: min(120px, 40%);
+  height: 3px;
+  border-radius: 3px;
+  background: #ffd9ec;
+  box-shadow: var(--glow-box-pink);
+  pointer-events: none;
 }
 
 .hud-rule {
@@ -353,6 +405,18 @@ a {
 
 .hud-mono {
   font-family: var(--font-mono);
+}
+
+/* a lit number/figure (stats, indexes): white-hot core, argon glow */
+.hud-lit {
+  font-family: var(--font-display);
+  font-weight: 400;
+  color: #eef9ff;
+  text-shadow: var(--glow-blue);
+}
+.hud-lit.is-pink {
+  color: #ffe3f1;
+  text-shadow: var(--glow-pink);
 }
 
 /* ---------------- 3D-anchored callouts (src/core/dom.ts) ---------------- */
@@ -412,13 +476,14 @@ a {
 }
 
 /* ---------------- word reveal (src/core/dom.ts rise/setRise) ----------------
-   THEME: restyle the motion (Orbit decoded, Resonance rose, Press stamped,
-   Town popped, Arcade blinked in). Neutral: a short rise + fade. */
+   NEON: each word STRIKES on like a tube — catches, dips once, holds —
+   staggered along the line. One shallow dip per word, settled in ~0.5 s;
+   reduced motion / Motion off: the words are simply there. */
 .rise .rise-w {
   display: inline-block;
   vertical-align: top;
   visibility: hidden;
-  transition: visibility 0s linear 0.3s;
+  transition: visibility 0s linear 0.25s;
 }
 .rise.is-in .rise-w {
   visibility: visible;
@@ -427,19 +492,29 @@ a {
 .rise .rise-w > span {
   display: inline-block;
   opacity: 0;
-  transform: translate3d(0, 0.4em, 0);
-  transition:
-    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 0.35s ease;
-  transition-delay: calc(var(--i, 0) * 35ms);
+  transition: opacity 0.2s ease;
 }
 .rise.is-in .rise-w > span {
   opacity: 1;
-  transform: none;
+  animation: neon-strike 0.5s linear both;
+  animation-delay: calc(var(--i, 0) * 55ms);
 }
-.rise:not(.is-in) .rise-w > span {
-  transition-duration: 0.25s, 0.2s;
-  transition-delay: 0s;
+@keyframes neon-strike {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  22% {
+    opacity: 0.5;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 /* ---------------- accessible copy layer (src/core/srContent.ts) ---------------- */
@@ -554,7 +629,7 @@ a {
 .lowfx .hud-panel {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  background: rgba(13, 15, 18, 0.9);
+  background: rgba(8, 6, 12, 0.92);
 }
 
 /* the visitor's Motion switch (engine.motion = false) mirrors reduced motion */

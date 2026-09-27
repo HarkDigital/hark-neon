@@ -1,12 +1,14 @@
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 
 /*
- * Post-processing: Render → Sanitize (NaN guard) → Bloom → Output → FINAL.
+ * Post-processing: Scene (+ Sanitize NaN guard) → Bloom → Output → FINAL.
+ * Only the scene render is multisampled (its own target, the only one with a
+ * depth buffer); the composer's ping-pong targets are single-sampled.
  *
  * THEME: the FINAL pass is where a concept gets its signature look and its
  * chapter-cut transition. Previous concepts replaced it with:
@@ -15,11 +17,25 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
  *   Press      ink densities → rotated halftone screens (riso)
  *   Town       tilt-shift blur + miniature saturation + cloud wipe
  *   Arcade     pixelate + palette snap + Bayer dither + CRT + iris wipe
+ *   Noir       silver-gelatin B&W, one hue survives, venetian-blind cut
  *
- * This neutral version: soft radial wipe to `uCutColor` at cuts, gentle
- * chromatic aberration, vignette, grain, flash and fade. Keep the Post API
- * (params / resetParams / setSize / render / compileAsync / setFadeTone) and
- * the uTransition / uFade / uFlash / uGlitch uniforms — the engine drives them.
+ * NEON: a night photograph of a sign shop. The bloom pass IS the glow (tuned
+ * for thin HDR tubes), then the final pass adds a touch of vibrance, a crushed
+ * black floor, faint lens fringing, grain and a vignette — and two neon-only
+ * effects:
+ *   LONG EXPOSURE   at scroll speed, the brightest tubes smear into light
+ *                   trails along the scroll (a camera dragged on a slow
+ *                   shutter). Only what glows streaks; darks never do.
+ *   LIGHTS-OUT CUT  the chapter cut: the frame goes dark in order of
+ *                   brightness (walls, then props, then the tubes last), the
+ *                   hottest tubes smear into trails, black at the boundary,
+ *                   then the next scene STRIKES on brightest-first and fills in.
+ * Calm (reduced motion / Motion off): no trails, a fade through black.
+ *
+ * The pass runs AFTER the sRGB output pass: it sees display values. Keep the
+ * Post API (params / resetParams / setSize / render / compileAsync /
+ * setFadeTone) and the uTransition / uFade / uFlash / uGlitch uniforms — the
+ * engine drives them.
  */
 
 const FinalShader = {
@@ -30,18 +46,25 @@ const FinalShader = {
     uDpr: { value: 1 },
     /** 0..1, peaks exactly at a chapter boundary (engine-driven) */
     uTransition: { value: 0 },
-    /** 0..1 wobble a chapter can add (THEME: glitch / heat shimmer / VHS …) */
+    /** 0..1 electrical interference: torn horizontal bands (the short circuit) */
     uGlitch: { value: 0 },
-    uAberration: { value: 0.0015 },
-    uGrain: { value: 0.03 },
-    uVignette: { value: 0.3 },
+    uAberration: { value: 0.0012 },
+    uGrain: { value: 0.024 },
+    uVignette: { value: 0.42 },
     /** 0..1 wash to white */
     uFlash: { value: 0 },
-    /** 0..1 fade to uFadeColor (reduced-motion cuts) */
+    /** 0..1 fade to uFadeColor (calm cuts) */
     uFade: { value: 0 },
-    /** colour the cut wipes through (THEME) */
-    uCutColor: { value: new THREE.Color('#0d0f12') },
-    uFadeColor: { value: new THREE.Color('#0d0f12') },
+    uCutColor: { value: new THREE.Color('#050408') },
+    uFadeColor: { value: new THREE.Color('#050408') },
+    /** light-trail length (uv) from scroll speed, and its direction (+1 / -1) */
+    uTrail: { value: 0 },
+    uTrailDir: { value: 1 },
+    /** the colour trails cool toward (display value) */
+    uTrailTint: { value: new THREE.Color('#ff2e97').convertLinearToSRGB() },
+    /** vibrance (1 = none) and black-point lift */
+    uSat: { value: 1.08 },
+    uLift: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -49,39 +72,76 @@ const FinalShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade;
+    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade, uTrail, uTrailDir, uSat, uLift;
     uniform vec2 uResolution;
-    uniform vec3 uCutColor, uFadeColor;
+    uniform vec3 uCutColor, uFadeColor, uTrailTint;
     varying vec2 vUv;
 
     float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    float peak(vec3 c) { return max(c.r, max(c.g, c.b)); }
+    // only what glows: a soft bright-pass on display values
+    vec3 hot(vec2 uv, float thr) {
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      return c * smoothstep(thr, thr + 0.2, peak(c));
+    }
 
     void main() {
       vec2 uv = vUv;
+      // electrical interference: a few torn bands that jump sideways, 20 fps
       float g = clamp(uGlitch, 0.0, 1.0);
-      uv.x += g * 0.004 * sin(uv.y * 60.0 + uTime * 12.0);
-
+      if (g > 0.001) {
+        float fr = floor(uTime * 20.0);
+        float band = floor(uv.y * 34.0);
+        float on = step(1.0 - 0.3 * g, hash(vec2(band, fr)));
+        uv.x += on * (hash(vec2(band * 3.1, fr + 7.0)) - 0.5) * 0.045 * g;
+      }
       vec2 c = uv - 0.5;
+      float ab = uAberration * (1.0 + 2.5 * g);
       vec3 col;
-      col.r = texture2D(tDiffuse, uv + c * uAberration).r;
+      col.r = texture2D(tDiffuse, uv + c * ab).r;
       col.g = texture2D(tDiffuse, uv).g;
-      col.b = texture2D(tDiffuse, uv - c * uAberration).b;
+      col.b = texture2D(tDiffuse, uv - c * ab).b;
 
-      // THEME: the chapter-cut transition. Neutral: a soft radial wipe that
-      // closes toward the centre at the boundary (t = 1) and reopens after.
+      // LIGHTS-OUT / STRIKE: a rising cut-off in brightness; the tubes go last
       float t = clamp(uTransition, 0.0, 1.0);
       if (t > 0.001) {
-        float aspect = uResolution.x / max(uResolution.y, 1.0);
-        float r = length(c * vec2(aspect, 1.0));
-        float reach = (1.0 - t) * 1.1;
-        float wipe = 1.0 - smoothstep(reach - 0.12, reach, r);
-        col = mix(uCutColor, col, wipe);
+        float thr = t * 1.2 - 0.14;
+        float keep = smoothstep(thr - 0.05, thr + 0.22, peak(col));
+        col *= mix(1.0, keep, smoothstep(0.0, 0.12, t));
       }
+
+      // LONG EXPOSURE: bright tubes smear along the scroll (and through the cut)
+      float L = uTrail + t * (1.0 - t) * 0.5;
+      if (L > 0.0025) {
+        float tthr = mix(0.6, 0.42, t);
+        vec3 acc = vec3(0.0);
+        float ws = 0.0;
+        for (int i = 1; i <= 10; i++) {
+          float k = float(i) / 10.0;
+          float w = (1.0 - k) * (1.0 - k);
+          acc += hot(uv + vec2(0.0, -k * L * uTrailDir), tthr) * w;
+          ws += w;
+        }
+        vec3 trail = acc / ws;
+        float tl = dot(trail, vec3(0.2126, 0.7152, 0.0722));
+        trail = mix(trail, uTrailTint * tl * 1.5, 0.3);
+        // the cut's trails fade as the frame reaches black
+        trail *= 1.0 - smoothstep(0.7, 1.0, t);
+        col = max(col, trail * 1.15);
+      }
+      col = mix(col, uCutColor, smoothstep(0.86, 1.0, t));
+
+      // grade: a little vibrance, a clean black floor, optional lift
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = max(mix(vec3(l), col, uSat), 0.0);
+      col = uLift + col * (1.0 - uLift);
 
       col = mix(col, vec3(1.0), clamp(uFlash, 0.0, 1.0));
       float v = 1.0 - smoothstep(0.35, 1.05, length(c * vec2(1.0, 0.9)) * 1.4);
-      col *= mix(1.0, 0.55 + 0.45 * v, uVignette);
-      col += (hash(vUv * uResolution + fract(uTime * 7.13) * 91.0) - 0.5) * uGrain;
+      col *= mix(1.0, 0.5 + 0.5 * v, uVignette);
+      // grain: coarser on dense screens so it reads the same size, 24 fps
+      vec2 gp = floor(vUv * uResolution / max(1.0, uDpr));
+      col += (hash(gp + fract(floor(uTime * 24.0) * 0.1317) * 97.0) - 0.5) * uGrain;
       col = mix(col, uFadeColor, clamp(uFade, 0.0, 1.0));
       gl_FragColor = vec4(col, 1.0);
     }
@@ -98,25 +158,36 @@ export type PostParams = {
   aberration: number
   grain: number
   vignette: number
-  /** wobble 0..1 */
+  /** electrical interference 0..1 */
   glitch: number
   /** white wash 0..1 */
   flash: number
   exposure: number
-  // THEME: add your look's params here (and damp them in render()).
+  /** scale on the scroll-speed light trails (0 = none) */
+  trails: number
+  /** vibrance (1 = none) */
+  saturation: number
+  /** black-point lift 0..0.15 */
+  lift: number
 }
 
-/** Bloom only catches HDR (> ~1.0): emissive lamps, LEDs, speculars. */
+/**
+ * Bloom is the neon glow: only HDR (> ~0.9) catches it — the tubes, the
+ * fluorescent strips. Screenshots and DOM-like surfaces must stay below it.
+ */
 export const POST_DEFAULTS: PostParams = {
-  bloomStrength: 0.45,
-  bloomRadius: 0.4,
-  bloomThreshold: 1.0,
-  aberration: 0.0015,
-  grain: 0.03,
-  vignette: 0.3,
+  bloomStrength: 0.8,
+  bloomRadius: 0.28,
+  bloomThreshold: 0.9,
+  aberration: 0.0012,
+  grain: 0.024,
+  vignette: 0.42,
   glitch: 0,
   flash: 0,
   exposure: 1,
+  trails: 1,
+  saturation: 1.08,
+  lift: 0,
 }
 
 /**
@@ -140,10 +211,51 @@ const SanitizeShader = {
   `,
 }
 
+/**
+ * Renders the scene into its OWN target — the only multisampled one and the
+ * only one with depth — then sanitizes (NaN guard) into the composer's
+ * single-sampled read buffer. Multisampled ping-pong targets cost 2–3x per
+ * post pass (Frost's lesson), so MSAA lives here only.
+ */
+class ScenePass extends Pass {
+  target: THREE.WebGLRenderTarget
+  material: THREE.ShaderMaterial
+  private quad: FullScreenQuad
+  constructor(
+    private scene: THREE.Scene,
+    private camera: THREE.Camera,
+    samples: number,
+  ) {
+    super()
+    this.needsSwap = false
+    this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples })
+    this.material = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.clone(SanitizeShader.uniforms),
+      vertexShader: SanitizeShader.vertexShader,
+      fragmentShader: SanitizeShader.fragmentShader,
+      depthTest: false,
+      depthWrite: false,
+    })
+    this.quad = new FullScreenQuad(this.material)
+  }
+  setSize(w: number, h: number) {
+    this.target.setSize(w, h)
+  }
+  render(renderer: THREE.WebGLRenderer, _write: THREE.WebGLRenderTarget, read: THREE.WebGLRenderTarget) {
+    renderer.setRenderTarget(this.target)
+    renderer.clear()
+    renderer.render(this.scene, this.camera)
+    this.material.uniforms.tDiffuse.value = this.target.texture
+    renderer.setRenderTarget(this.renderToScreen ? null : read)
+    this.quad.render(renderer)
+  }
+}
+
 export class Post {
   composer: EffectComposer
   bloom: UnrealBloomPass
   final: ShaderPass
+  private scenePass: ScenePass
   /**
    * Chapters write targets here every frame (the engine resets them to
    * defaults first); values are damped so nothing pops at a cut.
@@ -152,36 +264,67 @@ export class Post {
   private current: PostParams = { ...POST_DEFAULTS }
   transition = 0
   fade = 0
+  /** engine: reduced motion or the visitor's Motion switch is off (no trails, no interference) */
+  calm = false
+  /** engine: smoothed scroll velocity in viewport heights per second (signed) */
+  velocity = 0
+  /** engine: +1 when the nearest boundary is ahead (leaving a chapter), -1 when behind (entering) */
+  cutSide = 1
+  private trail = 0
+  /**
+   * Run right before the scene renders each frame, at the TOP level (camera
+   * already placed, its matrixWorld updated). Mirrors/reflectors render here
+   * instead of from Mesh.onBeforeRender: a nested render makes every lit
+   * material re-resolve its program twice a frame. Check your own group's
+   * visibility inside the hook (it runs whichever chapter is active).
+   */
+  preRender: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => void)[] = []
   private lastFlashAt = -1e9
   private flashLive = false
   private flashOk = true
 
   constructor(
     private renderer: THREE.WebGLRenderer,
-    scene: THREE.Scene,
-    camera: THREE.Camera,
+    private scene: THREE.Scene,
+    private camera: THREE.Camera,
     /** skip MSAA (retina / mobile: already supersampled; MSAA half-float targets are huge) */
     noMsaa: boolean,
   ) {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2())
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
       type: THREE.HalfFloatType,
-      samples: noMsaa ? 0 : 4,
+      samples: 0,
+      depthBuffer: false,
     })
     this.composer = new EffectComposer(renderer, rt)
-    this.composer.addPass(new RenderPass(scene, camera))
-    this.composer.addPass(new ShaderPass(SanitizeShader))
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.45, 0.4, 1.0)
+    this.scenePass = new ScenePass(scene, camera, noMsaa ? 0 : 4)
+    this.composer.addPass(this.scenePass)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), POST_DEFAULTS.bloomStrength, POST_DEFAULTS.bloomRadius, POST_DEFAULTS.bloomThreshold)
     this.composer.addPass(this.bloom)
     this.composer.addPass(new OutputPass())
     this.final = new ShaderPass(FinalShader)
     this.composer.addPass(this.final)
   }
 
-  /** THEME: colour the cut and reduced-motion fade pass through. */
+  /** The scene's render target (HDR, linear; multisampled on 1x desktops) — prewarm compiles against it. */
+  get sceneTarget() {
+    return this.scenePass.target
+  }
+
+  /** true when `rt` is the frame's own scene target (not a mirror / transmission pass) */
+  isFrameTarget(rt: THREE.WebGLRenderTarget | null) {
+    return rt === this.scenePass.target
+  }
+
+  /** THEME: colour the cut and calm fade pass through. */
   setCutColor(color: THREE.ColorRepresentation) {
     ;(this.final.uniforms.uCutColor.value as THREE.Color).set(color)
     ;(this.final.uniforms.uFadeColor.value as THREE.Color).set(color)
+  }
+
+  /** the colour light trails cool toward (a TUBE hex) */
+  setTrailTint(color: THREE.ColorRepresentation) {
+    ;(this.final.uniforms.uTrailTint.value as THREE.Color).set(color).convertLinearToSRGB()
   }
 
   /** Engine hook (kept for compatibility; themes may tint the fade by scene tone). */
@@ -237,6 +380,12 @@ export class Post {
       }
       if (!this.flashOk) c.flash = 0
     } else this.flashLive = false
+    // long exposure: trails only past a brisk scroll, capped, damped (never a pop)
+    const speed = Math.abs(this.velocity)
+    const want = this.calm ? 0 : Math.min(0.055, Math.max(0, speed - 1.2) * 0.012) * c.trails
+    this.trail += (want - this.trail) * (1 - Math.exp(-8 * dt))
+    // chapters zero bloom where nothing crosses the threshold: skip the pass entirely
+    this.bloom.enabled = c.bloomStrength > 0.01
     this.bloom.strength = c.bloomStrength
     this.bloom.radius = c.bloomRadius
     this.bloom.threshold = c.bloomThreshold
@@ -244,12 +393,20 @@ export class Post {
     const u = this.final.uniforms
     u.uTime.value = time
     u.uTransition.value = this.transition
-    u.uGlitch.value = c.glitch
+    u.uGlitch.value = this.calm ? 0 : c.glitch
     u.uAberration.value = c.aberration
     u.uGrain.value = c.grain
     u.uVignette.value = c.vignette
     u.uFlash.value = c.flash
     u.uFade.value = this.fade
+    u.uTrail.value = this.trail
+    u.uTrailDir.value = this.velocity < 0 ? -1 : 1
+    u.uSat.value = c.saturation
+    u.uLift.value = c.lift
+    if (this.preRender.length) {
+      this.camera.updateMatrixWorld()
+      for (const fn of this.preRender) fn(this.renderer, this.scene, this.camera)
+    }
     this.composer.render(dt)
   }
 }

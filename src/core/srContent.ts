@@ -16,6 +16,9 @@ const esc = (s: string) =>
 
 const isPreview = (url: string) => /harktest\.com/.test(url)
 
+/** the Break-In's stat panel (shown on stage, so it's in the linear copy too) */
+const STAT_247 = STATS.find(s => s.value === '24/7') ?? STATS[3]
+
 const ext = (href: string, label: string, anchor?: number) =>
   `<a href="${esc(href)}" target="_blank" rel="noopener"${anchor != null ? ` data-anchor="${anchor}"` : ''}>${esc(label)}<span class="sr-note"> (opens in a new tab)</span></a>`
 
@@ -52,6 +55,7 @@ const COPY: Record<string, () => string> = {
     <h2 tabindex="0">${esc(SECURITY.title)}</h2>
     <p>${esc(SECURITY.eyebrow)}.</p>
     <p>${esc(SECURITY.body)}</p>
+    <p>${esc(STAT_247.value)}: ${esc(STAT_247.label)}</p>
     <p><a href="${esc(SECURITY.href)}" data-anchor="0">${esc(SECURITY.cta.replace(/\s*→\s*$/, ''))}</a></p>`,
 
   voices: () => `
@@ -63,8 +67,8 @@ const COPY: Record<string, () => string> = {
     ).join('')}`,
 
   process: () => `
-    <p>How we work</p>
-    <h2 tabindex="0">We listen first. Then we build.</h2>
+    <p>${esc(SECTIONS.process.eyebrow)}</p>
+    <h2 tabindex="0">${esc(SECTIONS.process.title)}</h2>
     <ol>${PROCESS.map((p, i) => `<li><h3>${stop('process', i, p.title)}</h3><p>${esc(p.text)}</p></li>`).join('')}</ol>
     <ul>${[STATS[0], STATS[2], STATS[1]].map((s, i) => `<li>${i === 0 ? `${stop('process', 4, s.value)}: ${esc(s.label)}` : `${esc(s.value)}: ${esc(s.label)}`}</li>`).join('')}</ul>`,
 

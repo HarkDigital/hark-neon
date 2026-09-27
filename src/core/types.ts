@@ -48,9 +48,12 @@ export interface ChapterContext {
   renderer: THREE.WebGLRenderer
   camera: THREE.PerspectiveCamera
   /**
-   * The shared world (backdrop + lighting). Set world.params each frame you
-   * care (the engine resets them to defaults first). THEME: replace
-   * src/world/World.ts and update this comment.
+   * The shared shop at night (src/world/World.ts): a near-black backdrop
+   * with a tinted haze glow, FogExp2 haze, drifting dust motes that catch the
+   * light, a PMREM "neon room" env map for glossy glass/floors, a dim fill.
+   * Set world.params each frame you care (the engine resets them to
+   * defaults first): top/bottom/glow/glowColor, fog/fogColor, motes/moteColor,
+   * env, fill.
    */
   world: World
   post: Post
@@ -90,6 +93,12 @@ export interface Chapter {
    * the story at anchors[i].
    */
   anchors?: number[]
+  /**
+   * True while the chapter's own time-paced animation is still catching up
+   * with the scroll (a rate-capped story clock, a calm dissolve). Keeps the
+   * engine's Motion-off 2 fps heartbeat awake so the catch-up stays smooth.
+   */
+  busy?(): boolean
   /** Optional hover/click raycast hooks (pointer in NDC). */
   onPointerDown?(frame: Frame, ctx: ChapterContext): void
 }

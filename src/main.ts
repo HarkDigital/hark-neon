@@ -1,6 +1,8 @@
-// THEME: fonts (@fontsource packages). Neutral defaults: Inter + JetBrains Mono.
-import '@fontsource-variable/inter'
-import '@fontsource-variable/jetbrains-mono'
+// NEON fonts: Tilt Neon (display: monoline, tube-bent letterforms), Outfit
+// (text), Azeret Mono (labels, HUD).
+import '@fontsource/tilt-neon'
+import '@fontsource-variable/outfit'
+import '@fontsource-variable/azeret-mono'
 import './styles/base.css'
 import './ui/ui.css'
 
