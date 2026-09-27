@@ -1,0 +1,248 @@
+/* CONTACT · "Open Late" — the copy panel beside the lit door, and the sign-off.
+   Landscape: the panel docks left, vertically centred between the chrome bands.
+   Portrait: the panel sits in the bottom band (the OPEN sign is framed above);
+   narrow phones (.is-split) step it in two beats in one cell. */
+
+.ct {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ct-dock {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: min(520px, 42vw);
+  display: flex;
+  align-items: center;
+}
+
+.ct-panel {
+  width: 100%;
+  display: grid;
+  gap: 18px;
+  padding: 26px 28px 24px;
+  background: rgba(7, 5, 11, 0.8);
+}
+.ct-part {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.ct-a {
+  gap: 14px;
+}
+
+.ct-title {
+  font-size: clamp(2.4rem, 4.4vw, 4.2rem);
+}
+
+.ct-body {
+  max-width: 44ch;
+}
+
+/* the address as a lit tube: white-hot letters, pink gas, a lit underline */
+.ct-email {
+  justify-self: start;
+  display: inline-block;
+  max-width: 100%;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-synthesis: none;
+  font-size: clamp(1.7rem, 2.75vw, 2.6rem);
+  line-height: 1.12;
+  letter-spacing: 0.005em;
+  color: #fff0f8;
+  text-decoration: none;
+  text-shadow: var(--glow-pink);
+  padding: 4px 0 8px;
+  overflow-wrap: anywhere;
+  background-image: linear-gradient(90deg, #ffd9ec, #ffd9ec);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 100% 2px;
+  filter: drop-shadow(0 0 5px rgba(255, 46, 151, 0.55));
+  transition:
+    text-shadow 0.2s ease,
+    filter 0.2s ease;
+}
+.ct-email:hover,
+.ct-email:focus-visible {
+  color: #fff;
+  text-shadow:
+    0 0 1px #fff,
+    0 0 8px rgba(255, 46, 151, 1),
+    0 0 22px rgba(255, 46, 151, 0.8),
+    0 0 48px rgba(255, 46, 151, 0.5);
+  filter: drop-shadow(0 0 9px rgba(255, 46, 151, 0.8));
+}
+
+.ct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ct-actions .hud-btn,
+.ct-foot .hud-btn,
+.ct-end .hud-btn {
+  min-height: 44px;
+}
+
+.ct-others {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.ct-others-label {
+  margin: 0;
+  color: var(--fg);
+}
+.ct-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ct-list li {
+  display: flex;
+}
+/* each sister concept: a small unlit tube that lights argon on hover */
+.ct-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--fg);
+  border: 1px solid rgba(255, 246, 251, 0.3);
+  border-radius: 999px;
+  background: rgba(5, 4, 8, 0.4);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+.ct-chip-arrow {
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+.ct-chip:hover,
+.ct-chip:focus-visible {
+  border-color: rgba(44, 180, 255, 0.9);
+  box-shadow: 0 0 10px rgba(44, 180, 255, 0.45), inset 0 0 6px rgba(44, 180, 255, 0.2);
+  color: #eaf7ff;
+}
+
+.ct-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.ct-legal {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  flex: 1 1 200px;
+}
+
+/* closing time: the sign-off under the door */
+.ct-end {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: var(--safe-bottom);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.ct-legal--end {
+  flex: none;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(5, 4, 8, 0.78);
+  color: var(--fg-muted);
+}
+
+/* short landscape screens: tighten the rhythm, never clip */
+@media (max-height: 800px) and (orientation: landscape) {
+  .ct-panel {
+    gap: 14px;
+    padding: 20px 24px 20px;
+  }
+  .ct-part {
+    gap: 11px;
+  }
+  .ct-title {
+    font-size: clamp(2.2rem, 3.8vw, 3.4rem);
+  }
+  .ct-body {
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .ct-email {
+    font-size: clamp(1.6rem, 2.4vw, 2.2rem);
+  }
+  .ct-others,
+  .ct-foot {
+    padding-top: 12px;
+  }
+  .ct-chip {
+    min-height: 28px;
+    padding: 0 9px;
+  }
+}
+
+/* ---------------------------------------------------------- portrait */
+.ct.is-portrait .ct-dock {
+  right: var(--gutter);
+  width: auto;
+  align-items: flex-end;
+  justify-content: center;
+}
+.ct.is-portrait .ct-panel {
+  max-width: 640px;
+}
+
+/* narrow phones: two beats — the email card, then the other concepts */
+.ct.is-split .ct-panel {
+  padding: 18px 18px 16px;
+}
+.ct.is-split .ct-panel:not(.show-b) .ct-b,
+.ct.is-split .ct-panel.show-b .ct-a {
+  display: none;
+}
+.ct.is-split .ct-part {
+  gap: 10px;
+}
+.ct.is-split .ct-title {
+  font-size: clamp(2rem, 9vw, 2.6rem);
+}
+.ct.is-split .ct-body {
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.ct.is-split .ct-email {
+  font-size: clamp(1.45rem, 7vw, 1.9rem);
+}
+.ct.is-split .ct-others {
+  border-top: 0;
+  padding-top: 0;
+}
+.ct.is-split .ct-chip {
+  min-height: 32px;
+}

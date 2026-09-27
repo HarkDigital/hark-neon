@@ -33,6 +33,12 @@ import { textStrokes, type Stroke, type TextOptions } from './type'
  *     one glow: keep them small on screen, or lower HDR
  *   - never toggle a tube by visibility for a flicker: use levels through a
  *     Striker so the site-wide flash budget holds
+ *   - a long coloured frame round a screenshot (or any flat content) veils it
+ *     through bloom's wide mips at any strength: raise the chapter's
+ *     bloomThreshold (~1.2) and set HDR per colour so only the tube CORE
+ *     crosses it (work/index.ts hdrFor() is the worked example)
+ *   - small lettering: caps: false (sphere caps cost ~96 tris per stroke end
+ *     and sparkle as dots through bloom on phones)
  *   - a sign's RectAreaLight IN FRONT of a glossy backer blows it out into a
  *     white lightbox: put wall lights between the backer and the wall (a halo
  *     round its edge), and floor lights low, facing down
@@ -85,6 +91,8 @@ export interface NeonOptions {
   radial?: number
   /** Catmull-Rom smoothing of the strokes (default true; false keeps hard corners) */
   smooth?: boolean
+  /** round glass caps on open stroke ends (default true; ~96 tris each — skip for small lettering) */
+  caps?: boolean
 }
 
 const TUBE_VERT = /* glsl */ `
@@ -103,7 +111,7 @@ const TUBE_VERT = /* glsl */ `
 const TUBE_FRAG = /* glsl */ `
   uniform vec3 uColor;
   uniform vec3 uOff;
-  uniform float uHdr, uLevel, uDraw;
+  uniform float uHdr, uLevel, uDraw, uHide;
   varying float vArc;
   varying vec3 vN;
   varying vec3 vV;
@@ -111,6 +119,8 @@ const TUBE_FRAG = /* glsl */ `
     float facing = clamp(abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
     // light runs along the tube up to uDraw (1 = the whole tube)
     float drawn = 1.0 - smoothstep(uDraw - 0.015, uDraw + 0.0001, vArc);
+    // hidden-until-drawn: the tube only exists as far as it's been drawn
+    if (uHide > 0.5 && drawn < 0.02) discard;
     float lit = clamp(uLevel, 0.0, 1.0) * drawn;
     // the gas column: saturated at the glass edge, hotter (whiter) through the middle
     vec3 hot = uColor * uHdr;
@@ -146,6 +156,7 @@ export class NeonPart {
         uHdr: { value: hdr },
         uLevel: { value: 0 },
         uDraw: { value: 1.02 },
+        uHide: { value: 0 },
       },
       vertexShader: TUBE_VERT,
       fragmentShader: TUBE_FRAG,
@@ -170,6 +181,11 @@ export class NeonPart {
   /** 0..1 how far along its length the tube is lit (the sign writing itself). */
   setDraw(v: number) {
     this.material.uniforms.uDraw.value = v >= 1 ? 1.02 : Math.max(0, v)
+  }
+
+  /** true: the part beyond setDraw() doesn't exist (a tube being bent/drawn), instead of showing as unlit glass */
+  setHideUndrawn(on: boolean) {
+    this.material.uniforms.uHide.value = on ? 1 : 0
   }
 
   setColor(color: TubeColor | string) {
@@ -238,7 +254,7 @@ function capGeometry(p: THREE.Vector3, radius: number, arc: number) {
  * length of tube). aArc runs 0..1 along the lit length, for setDraw().
  */
 export function neonFromStrokes(strokes: Stroke[], opts: NeonOptions = {}): NeonPart {
-  const { color = 'pink', radius = 0.02, hdr = 4, blockout = true, electrodes = true, radial = 8, smooth = true } = opts
+  const { color = 'pink', radius = 0.02, hdr = 4, blockout = true, electrodes = true, radial = 8, smooth = true, caps = true } = opts
   const depth = opts.depth ?? radius * 6
   const hex = color in TUBE ? TUBE[color as TubeColor] : color
   const curves = strokes.filter(s => s.pts.length >= 2).map(s => ({ s, c: curveFor(s, smooth) }))
@@ -251,7 +267,7 @@ export function neonFromStrokes(strokes: Stroke[], opts: NeonOptions = {}): Neon
     acc += lens[i]
     const a1 = acc / total
     geos.push(tubeGeometry(c, radius, radial, !!s.closed, a0, a1).g)
-    if (!s.closed) {
+    if (!s.closed && caps) {
       geos.push(capGeometry(c.getPoint(0), radius, a0))
       geos.push(capGeometry(c.getPoint(1), radius, a1))
     }
@@ -343,6 +359,9 @@ const flashLog: number[] = []
 const FLASH_WINDOW = 1.0
 const FLASH_MAX = 2
 function takeFlashes(n: number, now: number) {
+  // prewarm runs chapter updates before the reveal: those strikes are invisible,
+  // don't let them spend the budget (ramp instead)
+  if (typeof document !== 'undefined' && document.documentElement.dataset.ready !== '1') return false
   while (flashLog.length && now - flashLog[0] > FLASH_WINDOW) flashLog.shift()
   if (flashLog.length + n > FLASH_MAX) return false
   for (let i = 0; i < n; i++) flashLog.push(now + i * 0.12)
@@ -516,6 +535,8 @@ export function neonSpill(strokes: Stroke[], o: SpillOptions) {
     depthWrite: false,
     opacity: 0,
     toneMapped: false,
+    // an additive plane that fogs adds the fog colour over its whole rectangle
+    fog: false,
   })
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat)
   mesh.position.set(cx, cy, 0)

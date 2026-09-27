@@ -1,0 +1,139 @@
+/* SHIELD · Short Circuit — chapter-scoped copy layout (prefix .sh-).
+   Landscape: a smoked-acrylic panel on the left, the signs framed right.
+   Portrait / phones: the panel in the bottom band, the signs above.
+   After the breach this corner runs on argon: the panel's lit edge and the
+   eyebrow tube are blue here (the CTA stays the house pink). */
+
+.sh-dock {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: min(500px, 40vw);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.sh-copy {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 26px 28px 24px;
+  justify-items: start;
+}
+.sh-copy.hud-panel::before {
+  background: #d9f1ff;
+  box-shadow: 0 0 0 1px rgba(190, 232, 255, 0.5), 0 0 12px rgba(44, 180, 255, 0.6), 0 0 32px rgba(44, 180, 255, 0.28);
+}
+.sh-copy .hud-eyebrow::before {
+  background: #d9f1ff;
+  box-shadow: 0 0 0 1px rgba(190, 232, 255, 0.5), 0 0 12px rgba(44, 180, 255, 0.6), 0 0 32px rgba(44, 180, 255, 0.28);
+}
+.sh-copy .hud-eyebrow {
+  line-height: 1.5;
+}
+
+.sh-title {
+  font-size: clamp(2.6rem, 4.9vw, 5.1rem);
+  line-height: 1;
+  padding-bottom: 0.04em;
+}
+
+.sh-body {
+  max-width: 40ch;
+}
+
+.sh-cta {
+  margin-top: 2px;
+}
+
+/* the 24/7 stat: its neon is bent on the wall; the legend lives here */
+.sh-stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.sh-stat-v {
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+.sh-stat-l {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 380;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+  max-width: 36ch;
+}
+
+/* short landscape screens: tighten the stack */
+@media (orientation: landscape) and (max-height: 760px) {
+  .sh-copy {
+    gap: 11px;
+    padding: 20px 24px 20px;
+  }
+  .sh-title {
+    font-size: clamp(2.4rem, 4.4vw, 4.2rem);
+  }
+  .sh-body {
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .sh-stat {
+    padding-top: 11px;
+  }
+}
+
+/* portrait (phones, tablets upright): the panel sits in the bottom band */
+@media (orientation: portrait), (max-width: 760px) {
+  .sh-dock {
+    left: var(--gutter);
+    right: var(--gutter);
+    width: auto;
+    top: auto;
+    align-items: flex-end;
+  }
+  .sh-copy {
+    gap: 10px;
+    padding: 16px 18px 16px;
+  }
+  .sh-title {
+    font-size: clamp(2.1rem, 8.4vw, 3.6rem);
+  }
+  .sh-body {
+    font-size: 14.5px;
+    line-height: 1.5;
+    max-width: 52ch;
+  }
+  .sh-stat {
+    gap: 12px;
+    padding-top: 10px;
+    margin-top: 0;
+  }
+  .sh-stat-v {
+    font-size: 24px;
+  }
+  .sh-stat-l {
+    font-size: 13px;
+  }
+}
+
+/* short phones: the legend waits for the keep-watch beat, where it swaps in
+   for the body (the neon 24/7 is the subject then) — keeps the sign clear */
+@media (orientation: portrait) and (max-height: 720px) {
+  .sh-stat,
+  .sh-copy.is-watch .sh-body {
+    display: none;
+  }
+  .sh-copy.is-watch .sh-stat {
+    display: grid;
+  }
+}

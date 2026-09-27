@@ -1,0 +1,139 @@
+/* HERO · Lights On — chapter-scoped copy layout (.hr-*) */
+
+/* intro: top-left over dark brick; a soft smoked scrim keeps the body copy
+   readable whatever the fluorescents do to the wall behind it */
+.hr-intro {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  max-width: min(470px, calc(100vw - 2 * var(--gutter)));
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+.hr-intro::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: -90px;
+  top: -70px;
+  right: -110px;
+  bottom: -70px;
+  background: radial-gradient(closest-side, rgba(5, 4, 8, 0.72), rgba(5, 4, 8, 0.5) 55%, rgba(5, 4, 8, 0));
+  pointer-events: none;
+}
+.hr-intro .hud-body {
+  color: rgba(255, 246, 251, 0.86);
+}
+.hr-hint {
+  margin: 4px 0 0;
+}
+
+/* payoff: the h1 + CTAs on the left, vertically centred between the chrome bands */
+.hr-payoff {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: min(600px, 44vw);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hr-payoff-inner {
+  position: relative;
+  display: grid;
+  gap: 26px;
+  justify-items: start;
+}
+.hr-payoff-inner::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: -120px;
+  top: -90px;
+  right: -90px;
+  bottom: -90px;
+  background: radial-gradient(closest-side, rgba(5, 4, 8, 0.6), rgba(5, 4, 8, 0.36) 60%, rgba(5, 4, 8, 0));
+  pointer-events: none;
+}
+.hr-title {
+  font-size: clamp(3rem, 7.4vw, 7.6rem);
+}
+.hr-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hr-locale {
+  margin: 0 0 -8px;
+}
+
+/* short landscape screens: keep the payoff inside the bands */
+@media (min-aspect-ratio: 1/1) and (max-height: 760px) {
+  .hr-title {
+    font-size: clamp(2.8rem, 11vh, 6.2rem);
+  }
+  .hr-payoff-inner {
+    gap: 20px;
+  }
+}
+
+/* portrait (phones, tablets upright): intro in the top band, payoff in the
+   bottom band, each on a smoked-acrylic plate; the sign sits between them */
+@media (max-aspect-ratio: 1/1) {
+  .hr-intro {
+    right: var(--gutter);
+    max-width: 560px;
+    padding: 16px 18px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    gap: 10px;
+  }
+  .hr-intro::before {
+    display: none;
+  }
+  .hr-payoff {
+    top: auto;
+    right: var(--gutter);
+    width: auto;
+    max-width: 620px;
+    display: block;
+  }
+  .hr-payoff-inner {
+    padding: 18px 20px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    gap: 16px;
+  }
+  .hr-payoff-inner::before {
+    display: none;
+  }
+  .hr-title {
+    font-size: clamp(2.6rem, 11.5vw, 5.6rem);
+  }
+}
+@media (max-aspect-ratio: 1/1) and (max-width: 420px) {
+  .hr-intro .hud-body {
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+}
+@media (max-aspect-ratio: 1/1) and (max-height: 700px) {
+  .hr-intro {
+    padding: 12px 14px;
+    gap: 8px;
+  }
+  .hr-intro .hud-body {
+    font-size: 13.5px;
+  }
+  .hr-title {
+    font-size: 2.35rem;
+  }
+  .hr-payoff-inner {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+}

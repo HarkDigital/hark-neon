@@ -1,0 +1,126 @@
+/* VOICES · Word of Mouth — chapter-scoped layout (prefix .vc-) */
+
+.vc-root {
+  position: absolute;
+  inset: 0;
+}
+
+/* measures the chrome's safe band (top/bottom tokens) for the camera fit */
+.vc-probe {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.vc-intro {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  max-width: min(640px, calc(100vw - 2 * var(--gutter)));
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+/* ---------------- a quote INSIDE its bubble (desktop) ---------------- */
+.vc-fig {
+  position: absolute;
+  margin: 0;
+  left: 50%;
+  top: var(--vc-y, 50%);
+  width: var(--vc-w, 560px);
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: calc(var(--vc-fs, 22px) * 0.62);
+  isolation: isolate;
+}
+/* the night inside the bubble, deepened a touch behind the words */
+.vc-scrim {
+  position: absolute;
+  inset: -20% -9%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(5, 4, 8, 0.72), rgba(5, 4, 8, 0.5) 60%, rgba(5, 4, 8, 0));
+}
+.vc-q {
+  font-size: var(--vc-fs, 22px);
+  line-height: 1.34;
+  text-wrap: balance;
+  text-shadow:
+    0 0 14px rgba(5, 4, 8, 0.95),
+    0 1px 2px rgba(5, 4, 8, 0.9);
+}
+.vc-idx {
+  margin: 0;
+  color: var(--fg);
+  letter-spacing: 0.2em;
+  font-size: 11.5px;
+}
+.vc-idx .vc-n {
+  color: #fff;
+  text-shadow:
+    0 0 1px #fff,
+    0 0 8px var(--vc-c, #ff2e97),
+    0 0 18px var(--vc-c, #ff2e97);
+}
+.vc-who {
+  color: var(--fg);
+  font-size: 11.5px;
+  text-shadow: 0 0 10px rgba(5, 4, 8, 0.95);
+}
+
+/* ---------------- portrait / phones: the quote in a panel, the bubble above ---------------- */
+.vc-panel .vc-fig {
+  left: var(--gutter);
+  right: var(--gutter);
+  top: auto;
+  bottom: var(--safe-bottom);
+  width: auto;
+  max-width: 600px;
+  margin-inline: auto;
+  transform: none;
+  text-align: left;
+  justify-items: start;
+  gap: 10px;
+  padding: 16px 18px 15px;
+}
+.vc-panel .vc-scrim {
+  display: none;
+}
+.vc-panel .vc-q {
+  font-size: clamp(1rem, 4.1vw, 1.28rem);
+  line-height: 1.38;
+  text-wrap: pretty;
+  text-shadow: none;
+}
+.vc-panel .vc-fig.hud-panel::before {
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--vc-c, #ff2e97),
+    0 0 10px var(--vc-c, #ff2e97),
+    0 0 26px var(--vc-c, #ff2e97);
+}
+
+/* on phones the intro sits over the scene: give it a readable plate */
+@media (max-width: 760px) {
+  .vc-intro {
+    right: var(--gutter);
+    max-width: none;
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+}
+.lowfx .vc-intro {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

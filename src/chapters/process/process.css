@@ -1,0 +1,186 @@
+/* PROCESS · The Bench — chapter-scoped layout (prefix: pr-) */
+
+/* intro: eyebrow + headline, top-left (top band on phones) */
+.pr-head {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  max-width: min(620px, calc(100vw - 2 * var(--gutter)));
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+}
+.pr-h2 {
+  max-width: 13ch;
+}
+
+/* the step card: bottom-left, smoked acrylic with a lit tube on its top edge */
+.pr-card {
+  position: absolute;
+  left: var(--gutter);
+  bottom: var(--safe-bottom);
+  width: min(440px, calc(100vw - 2 * var(--gutter)));
+  display: grid;
+  gap: 8px;
+  padding: 20px 24px 22px;
+}
+.pr-num {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0 0 2px;
+}
+.pr-num-n {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1;
+  color: #ffe3f1;
+  text-shadow: var(--glow-pink);
+}
+.pr-num-of {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+}
+.pr-num-tag {
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.pr-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-synthesis: none;
+  font-size: clamp(1.9rem, 2.8vw, 2.6rem);
+  line-height: 1;
+  margin: 0;
+  color: var(--paper);
+  text-shadow: var(--glow-white);
+}
+.pr-text {
+  max-width: 38ch;
+}
+
+/* stats: landscape — a label plate under each numeral (x set from the scene) */
+.pr-stats {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pr-stat {
+  position: absolute;
+  left: 0;
+  bottom: var(--safe-bottom);
+  width: min(290px, 27vw);
+  padding: 12px 16px 14px;
+  background: rgba(8, 6, 12, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  will-change: transform, opacity;
+}
+.pr-stat::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -1.5px;
+  width: 44px;
+  margin-left: -22px;
+  height: 3px;
+  border-radius: 3px;
+  background: #d9f2ff;
+  box-shadow: 0 0 0 1px rgba(190, 230, 255, 0.5), 0 0 12px rgba(44, 180, 255, 0.6), 0 0 28px rgba(44, 180, 255, 0.28);
+}
+.pr-stat-v {
+  display: none;
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.05;
+  color: #eef9ff;
+  text-shadow: var(--glow-blue);
+}
+.pr-stat-l {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 350;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* portrait (phones, tablets upright): the numerals stack on the wall above;
+   the labels list in the bottom band, each with its value */
+@media (orientation: portrait) {
+  .pr-head {
+    right: var(--gutter);
+    max-width: none;
+    padding: 16px 18px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  .pr-h2 {
+    max-width: none;
+    font-size: clamp(1.9rem, 8.4vw, 3.4rem);
+  }
+  .pr-card {
+    right: var(--gutter);
+    width: auto;
+    max-width: 560px;
+    padding: 16px 18px 18px;
+    gap: 6px;
+  }
+  .pr-num-n {
+    font-size: 26px;
+  }
+  .pr-title {
+    font-size: clamp(1.6rem, 7vw, 2.4rem);
+  }
+  .pr-stats {
+    inset: auto var(--gutter) var(--safe-bottom) var(--gutter);
+    display: grid;
+    gap: 8px;
+    max-width: 560px;
+  }
+  .pr-stat {
+    position: relative;
+    bottom: auto;
+    width: auto;
+    padding: 10px 14px 11px;
+    display: grid;
+    grid-template-columns: 5.2em 1fr;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .pr-stat::before {
+    left: 16px;
+    margin-left: 0;
+    width: 28px;
+  }
+  .pr-stat-v {
+    display: block;
+    margin: 0;
+    font-size: 20px;
+  }
+  .pr-stat-l {
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: left;
+  }
+}
+@media (orientation: portrait) and (max-height: 700px) {
+  .pr-stat-l {
+    font-size: 12px;
+  }
+  .pr-card .pr-text {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}

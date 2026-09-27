@@ -160,6 +160,7 @@ export function concreteMaterial({ color = '#141116', roughness = 0.3, width = 2
 
 let acrylic: THREE.MeshStandardMaterial | null = null
 let steel: THREE.MeshStandardMaterial | null = null
+let standoffSteel: THREE.MeshStandardMaterial | null = null
 export const acrylicMaterial = () => (acrylic ??= new THREE.MeshStandardMaterial({ color: 0x060507, roughness: 0.16, metalness: 0, envMapIntensity: 0.8 }))
 export const steelMaterial = () => (steel ??= new THREE.MeshStandardMaterial({ color: 0x9a9aa2, roughness: 0.38, metalness: 0.85, envMapIntensity: 0.9 }))
 
@@ -172,7 +173,10 @@ export function backerPanel(w: number, h: number, { depth = 0.012, standoff = 0.
   const post = new THREE.CylinderGeometry(0.012, 0.012, standoff, 10)
   post.rotateX(Math.PI / 2)
   const inset = Math.min(w, h) * 0.06 + 0.02
-  const posts = new THREE.InstancedMesh(post, steelMaterial(), 4)
+  // instanced: its own material (one material drawn by both an InstancedMesh
+  // and plain meshes re-resolves its program on every draw)
+  standoffSteel ??= steelMaterial().clone()
+  const posts = new THREE.InstancedMesh(post, standoffSteel, 4)
   const m = new THREE.Matrix4()
   let i = 0
   for (const sx of [-1, 1])

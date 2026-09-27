@@ -1,0 +1,128 @@
+/* SERVICES · Tube Chart — chapter-scoped layout (.sv-) */
+
+.sv-intro {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  max-width: min(640px, calc(100vw - 2 * var(--gutter)));
+  display: grid;
+  gap: 16px;
+}
+/* always two lines: "Eleven ways / to be heard." */
+.sv-intro .hud-h2 {
+  max-width: 7.4em;
+}
+
+/* the service card: smoked acrylic, its top tube lit in the active colour */
+.sv-card {
+  position: absolute;
+  left: var(--gutter);
+  bottom: var(--safe-bottom);
+  width: min(440px, 38vw);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 24px 22px;
+}
+.sv-card::before {
+  background: var(--sv-core, #ffd9ec);
+  box-shadow:
+    0 0 0 1px var(--sv-edge, rgba(255, 46, 151, 0.55)),
+    0 0 12px var(--sv-glow, rgba(255, 46, 151, 0.85)),
+    0 0 32px var(--sv-glow-2, rgba(255, 46, 151, 0.4));
+}
+/* the card holds its tallest service's height: the index row heads it,
+   the service itself sits on the bottom edge */
+.sv-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sv-row {
+  margin-bottom: auto;
+}
+.sv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.sv-row p {
+  margin: 0;
+}
+.sv-num {
+  color: var(--fg);
+}
+.sv-swatch {
+  text-align: right;
+}
+.sv-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-synthesis: none;
+  font-size: clamp(1.75rem, 2.55vw, 2.6rem);
+  line-height: 1.04;
+  letter-spacing: -0.005em;
+  color: var(--sv-text, #ffe3f1);
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 7px var(--sv-glow, rgba(255, 46, 151, 0.85)),
+    0 0 22px var(--sv-glow-2, rgba(255, 46, 151, 0.4));
+  text-wrap: balance;
+}
+.sv-blurb {
+  max-width: none;
+}
+.sv-tags {
+  margin-top: 2px;
+}
+
+/* portrait (phones, tall tablets): the card owns the bottom band, full width */
+@media (orientation: portrait) {
+  .sv-card {
+    right: var(--gutter);
+    width: auto;
+    max-width: 600px;
+    padding: 18px 18px 18px;
+  }
+  .sv-title {
+    font-size: clamp(1.55rem, 6.2vw, 2.3rem);
+  }
+}
+@media (orientation: portrait) and (min-width: 700px) {
+  .sv-card {
+    left: 50%;
+    right: auto;
+    width: min(600px, calc(100vw - 2 * var(--gutter)));
+    transform: translateX(-50%);
+  }
+}
+
+/* phones: the intro gets a readable plate over the chart */
+@media (max-width: 760px) {
+  .sv-intro {
+    right: var(--gutter);
+    max-width: none;
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  .sv-body {
+    gap: 9px;
+  }
+  .sv-blurb {
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+}
+@media (max-height: 700px) and (orientation: portrait) {
+  .sv-blurb {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .sv-tags .hud-tag {
+    padding: 3px 8px;
+  }
+}

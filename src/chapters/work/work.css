@@ -1,0 +1,170 @@
+/* WORK · The Sign Wall — chapter-scoped layout (prefix .wk-) */
+
+/* intro: eyebrow + headline over the near end of the wall */
+.wk-intro {
+  position: absolute;
+  left: var(--gutter);
+  top: 50%;
+  transform: translateY(-62%);
+  max-width: min(620px, calc(100vw - 2 * var(--gutter)));
+  display: grid;
+  gap: 18px;
+  pointer-events: none;
+}
+.wk-intro::before {
+  /* a soft scrim so the copy never sits on a lit sign */
+  content: '';
+  position: absolute;
+  inset: -60px -90px -60px -60px;
+  background: radial-gradient(closest-side, rgba(5, 4, 8, 0.62), rgba(5, 4, 8, 0));
+  z-index: -1;
+  pointer-events: none;
+}
+.wk-title {
+  font-size: clamp(2.6rem, 6vw, 5.6rem);
+}
+
+/* the job card: which sign is on the wall */
+.wk-card {
+  --wk-c: 255, 46, 151;
+  --wk-core: #ffd9ec;
+  position: absolute;
+  left: var(--gutter);
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(400px, 34vw);
+  display: grid;
+  gap: 12px;
+}
+.wk-card[data-tube='blue'] {
+  --wk-c: 44, 180, 255;
+  --wk-core: #d8f1ff;
+}
+.wk-card[data-tube='amber'] {
+  --wk-c: 255, 161, 38;
+  --wk-core: #ffe8c8;
+}
+.wk-card[data-tube='violet'] {
+  --wk-c: 155, 92, 255;
+  --wk-core: #e6dcff;
+}
+.wk-card[data-tube='red'] {
+  --wk-c: 255, 66, 32;
+  --wk-core: #ffd9cf;
+}
+.wk-card[data-tube='white'] {
+  --wk-c: 255, 214, 236;
+  --wk-core: #fff6fb;
+}
+.wk-card.hud-panel::before {
+  background: var(--wk-core);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 0 12px rgba(var(--wk-c), 0.75),
+    0 0 32px rgba(var(--wk-c), 0.35);
+}
+.wk-meta {
+  margin: 0;
+}
+.wk-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-synthesis: none;
+  font-size: clamp(1.75rem, 2.6vw, 2.6rem);
+  line-height: 1.04;
+  margin: 0;
+  color: #fff6fb;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 7px rgba(var(--wk-c), 0.9),
+    0 0 20px rgba(var(--wk-c), 0.55);
+  text-wrap: balance;
+}
+.wk-blurb {
+  max-width: none;
+}
+.wk-visit {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+/* the pickup board's list */
+.wk-rest {
+  --wk-c: 255, 161, 38;
+  --wk-core: #ffe8c8;
+  gap: 14px;
+}
+.wk-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+.wk-list a {
+  color: var(--fg);
+  text-decoration: none;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.3;
+}
+.wk-list a:hover,
+.wk-list a:focus-visible {
+  color: #ffd8a6;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.wk-arrow {
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.wk-rest .hud-btn {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+/* portrait (phones, tablets upright): copy in the bottom band, the sign framed above */
+@media (orientation: portrait) {
+  .wk-intro {
+    top: var(--safe-top);
+    right: var(--gutter);
+    max-width: none;
+    transform: none;
+  }
+  .wk-card {
+    top: auto;
+    bottom: var(--safe-bottom);
+    right: var(--gutter);
+    width: auto;
+    max-width: 620px;
+    transform: none;
+    gap: 9px;
+    padding: 16px 18px;
+  }
+  .wk-name {
+    font-size: clamp(1.6rem, 6.4vw, 2.4rem);
+  }
+  .wk-blurb {
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .wk-list {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 14px;
+  }
+  .wk-list a {
+    font-size: 13px;
+  }
+}
+@media (orientation: portrait) and (max-height: 700px) {
+  .wk-card {
+    gap: 7px;
+    padding: 14px 16px;
+  }
+  .wk-blurb {
+    font-size: 13.5px;
+    line-height: 1.42;
+  }
+}

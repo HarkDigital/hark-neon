@@ -62,6 +62,8 @@ const FinalShader = {
     uTrailDir: { value: 1 },
     /** the colour trails cool toward (display value) */
     uTrailTint: { value: new THREE.Color('#ff2e97').convertLinearToSRGB() },
+    /** 0..1 how far trails pull toward uTrailTint (0 = each tube's own colour) */
+    uTrailMix: { value: 0 },
     /** vibrance (1 = none) and black-point lift */
     uSat: { value: 1.08 },
     uLift: { value: 0 },
@@ -72,7 +74,7 @@ const FinalShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade, uTrail, uTrailDir, uSat, uLift;
+    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade, uTrail, uTrailDir, uTrailMix, uSat, uLift;
     uniform vec2 uResolution;
     uniform vec3 uCutColor, uFadeColor, uTrailTint;
     varying vec2 vUv;
@@ -114,17 +116,25 @@ const FinalShader = {
       float L = uTrail + t * (1.0 - t) * 0.5;
       if (L > 0.0025) {
         float tthr = mix(0.6, 0.42, t);
+        // half smear (the integral a slow shutter records), half comet (the
+        // brightest sample, fading with distance): streaks keep a crisp edge
         vec3 acc = vec3(0.0);
+        vec3 comet = vec3(0.0);
         float ws = 0.0;
+        // per-pixel jitter on the taps: noise instead of stepped ghost copies
+        float jit = hash(gl_FragCoord.xy + fract(uTime) * 13.0);
         for (int i = 1; i <= 10; i++) {
-          float k = float(i) / 10.0;
+          float k = (float(i) - jit) / 10.0;
           float w = (1.0 - k) * (1.0 - k);
-          acc += hot(uv + vec2(0.0, -k * L * uTrailDir), tthr) * w;
+          vec3 h = hot(uv + vec2(0.0, -k * L * uTrailDir), tthr);
+          acc += h * w;
+          comet = max(comet, h * (1.0 - k));
           ws += w;
         }
-        vec3 trail = acc / ws;
+        vec3 trail = mix(acc / ws, comet, 0.55);
+        // each tube keeps its own colour (uTrailTint can pull them together: 0 by default)
         float tl = dot(trail, vec3(0.2126, 0.7152, 0.0722));
-        trail = mix(trail, uTrailTint * tl * 1.5, 0.3);
+        trail = mix(trail, uTrailTint * tl * 1.5, uTrailMix);
         // the cut's trails fade as the frame reaches black
         trail *= 1.0 - smoothstep(0.7, 1.0, t);
         col = max(col, trail * 1.15);
